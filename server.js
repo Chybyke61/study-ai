@@ -13,6 +13,9 @@ const natural = require("natural");
 const app = express();
 
 app.use(cors());
+app.get("/", (req, res) => {
+    res.send("Study AI backend is running.");
+});
 app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
