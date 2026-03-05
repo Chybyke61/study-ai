@@ -12,7 +12,11 @@ const natural = require("natural");
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  methods: ["GET","POST","DELETE"],
+  allowedHeaders: ["Content-Type"]
+}));
 app.get("/", (req, res) => {
     res.send("Study AI backend is running.");
 });
