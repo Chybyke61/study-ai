@@ -1,0 +1,444 @@
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+const textract = require("textract");
+const pdfParse = require("pdf-parse");
+const Groq = require("groq-sdk");
+const natural = require("natural");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json({ limit: "500mb" }));
+app.use(express.urlencoded({ extended: true, limit: "500mb" }));
+
+app.use((req, res, next) => {
+    req.setTimeout(600000);
+    next();
+});
+
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY
+});
+
+const UPLOAD_DIR = "./uploads";
+const CACHE_FILE = "./rag_cache.json";
+
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+/* ---------------------- */
+/* MULTER CONFIG */
+/* ---------------------- */
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => {
+        const safe = file.originalname.replace(/\s+/g, "_");
+        cb(null, Date.now() + "_" + safe);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 500 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = [
+            "application/pdf",
+            "text/plain",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        ];
+
+        if (allowed.includes(file.mimetype)) cb(null, true);
+        else cb(new Error("Unsupported file type"), false);
+    }
+});
+
+/* ---------------------- */
+/* MEMORY */
+/* ---------------------- */
+
+let tfidf = new natural.TfIdf();
+let paragraphs = [];
+let documentStore = {};
+
+/* ---------------------- */
+/* CACHE SYSTEM */
+/* ---------------------- */
+
+function saveCache() {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(documentStore));
+}
+
+function loadCache() {
+    if (fs.existsSync(CACHE_FILE)) {
+        try {
+            documentStore = JSON.parse(fs.readFileSync(CACHE_FILE, "utf8"));
+            rebuildIndex();
+        } catch {
+            documentStore = {};
+        }
+    }
+}
+
+/* ---------------------- */
+/* REBUILD INDEX */
+/* ---------------------- */
+
+function rebuildIndex() {
+
+    tfidf = new natural.TfIdf();
+    paragraphs = [];
+
+    for (const [file, paras] of Object.entries(documentStore)) {
+
+        paras.forEach(p => {
+
+            const text = p.toLowerCase();
+
+            paragraphs.push({
+                text,
+                source: file
+            });
+
+            tfidf.addDocument(text);
+
+        });
+
+    }
+
+    console.log(`📊 Index Rebuilt: ${paragraphs.length} chunks`);
+}
+
+/* ---------------------- */
+/* ROBUST TEXT EXTRACTION */
+/* ---------------------- */
+
+async function extractText(file) {
+
+    const ext = path.extname(file.path).toLowerCase();
+
+    try {
+
+        /* ---------- PDF PARSER FIX ---------- */
+
+        if (ext === ".pdf") {
+
+            const buffer = new Uint8Array(
+                fs.readFileSync(file.path)
+            );
+
+            let result = "";
+
+            try {
+
+                if (typeof pdfParse === "function") {
+
+                    const data = await pdfParse(buffer);
+                    result = data?.text || "";
+
+                }
+
+                else if (pdfParse.PDFParse) {
+
+                    const parser = new pdfParse.PDFParse(buffer);
+                    const data = await parser.getText();
+
+                    if (typeof data === "string") result = data;
+                    else if (data?.text) result = data.text;
+
+                }
+
+                else if (pdfParse.default) {
+
+                    const data = await pdfParse.default(buffer);
+                    result = data?.text || "";
+
+                }
+
+            } catch {
+                console.log("pdf-parse failed, trying textract...");
+            }
+
+            if (result && result.trim().length > 100)
+                return result;
+
+        }
+
+        /* ---------- TEXTRACT FALLBACK ---------- */
+
+        return new Promise(resolve => {
+
+            textract.fromFileWithPath(
+                file.path,
+                { preserveLineBreaks: true },
+                (err, text) => {
+
+                    if (err) return resolve("");
+
+                    resolve(text || "");
+
+                }
+            );
+
+        });
+
+    } catch {
+
+        return "";
+
+    }
+}
+
+/* ---------------------- */
+/* SEARCH */
+/* ---------------------- */
+
+function searchContext(query, selectedBook = "all") {
+
+    let scores = [];
+
+    tfidf.tfidfs(query.toLowerCase(), (i, measure) => {
+
+        if (
+            paragraphs[i] &&
+            (selectedBook === "all" || paragraphs[i].source === selectedBook)
+        ) {
+
+            scores.push({
+                text: paragraphs[i].text,
+                score: measure
+            });
+
+        }
+
+    });
+
+    const best = scores
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8);
+
+    const isFound = best.length > 0 && best[0].score > 0.01;
+
+    return {
+        context: best
+            .map(r => r.text)
+            .join("\n\n")
+            .slice(0, 4000),
+        isFound
+    };
+}
+
+/* ---------------------- */
+/* AI CALL */
+/* ---------------------- */
+
+async function askAI(prompt, system) {
+
+    try {
+
+        const chat = await groq.chat.completions.create({
+
+            model: "llama-3.1-8b-instant",
+
+            messages: [
+                { role: "system", content: system },
+                { role: "user", content: prompt }
+            ]
+
+        });
+
+        return chat.choices[0].message.content;
+
+    } catch {
+
+        return "⚠️ AI request failed.";
+
+    }
+}
+
+/* ---------------------- */
+/* PROMPT */
+/* ---------------------- */
+
+const PROFESSOR_SYSTEM_PROMPT = `
+You are an elite academic professor.
+
+Rules:
+1. Use ONLY the provided context.
+2. Provide detailed explanations.
+3. If the answer is not in the context say so.
+4. Use markdown headings and structured explanations.
+`;
+
+/* ---------------------- */
+/* AI ROUTES */
+/* ---------------------- */
+
+app.post("/explain", async (req, res) => {
+
+    const { topic, book } = req.body;
+
+    const search = searchContext(topic, book);
+
+    const prompt = `
+Context from library:
+
+${search.context}
+
+Explain "${topic}" in detail.
+`;
+
+    const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
+
+    res.json({ explanation: answer });
+});
+
+app.post("/notes", async (req, res) => {
+
+    const { topic, book } = req.body;
+
+    const search = searchContext(topic, book);
+
+    const prompt = `
+Context from library:
+
+${search.context}
+
+Create structured study notes for "${topic}".
+`;
+
+    const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
+
+    res.json({ notes: answer });
+});
+
+app.post("/quiz", async (req, res) => {
+
+    const { topic, book } = req.body;
+
+    const search = searchContext(topic, book);
+
+    const prompt = `
+Context from library:
+
+${search.context}
+
+Create a difficult 5-question MCQ quiz about "${topic}".
+`;
+
+    const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
+
+    res.json({ quiz: answer });
+});
+
+/* ---------------------- */
+/* BOOK ROUTES */
+/* ---------------------- */
+
+app.get("/books", (req, res) => {
+
+    const books = Object.keys(documentStore).map(name => ({
+
+        name,
+
+        size: fs.existsSync(path.join(UPLOAD_DIR, name))
+            ? fs.statSync(path.join(UPLOAD_DIR, name)).size
+            : 0
+
+    }));
+
+    res.json(books);
+});
+
+/* ---------------------- */
+/* UPLOAD */
+/* ---------------------- */
+
+app.post("/upload", upload.single("book"), async (req, res) => {
+
+    try {
+
+        if (!req.file)
+            return res.status(400).json({ error: "No file uploaded." });
+
+        let text = await extractText(req.file);
+
+        if (!text || text.length < 100) {
+
+            fs.unlinkSync(req.file.path);
+
+            return res.status(422).json({
+                error: "Could not extract text. File may be scanned image."
+            });
+
+        }
+
+        const chunks = text
+            .split(/\n\s*\n/)
+            .map(p => p.trim())
+            .filter(p => p.length > 40)
+            .slice(0, 6000);
+
+        documentStore[req.file.filename] = chunks;
+
+        saveCache();
+        rebuildIndex();
+
+        res.json({
+            name: req.file.filename,
+            chunks: chunks.length
+        });
+
+    } catch {
+
+        res.status(500).json({ error: "Upload failed." });
+
+    }
+});
+
+/* ---------------------- */
+/* DELETE BOOK */
+/* ---------------------- */
+
+app.delete("/delete-book/:name", (req, res) => {
+
+    const name = decodeURIComponent(req.params.name);
+
+    if (documentStore[name]) {
+
+        delete documentStore[name];
+
+        const filePath = path.join(UPLOAD_DIR, name);
+
+        if (fs.existsSync(filePath))
+            fs.unlinkSync(filePath);
+
+        saveCache();
+        rebuildIndex();
+
+        return res.json({ success: true });
+
+    }
+
+    res.status(404).json({ error: "Not found" });
+});
+
+/* ---------------------- */
+/* START SERVER */
+/* ---------------------- */
+
+app.listen(5000, () => {
+
+    loadCache();
+
+    console.log("🚀 Server running on port 5000");
+
+});
