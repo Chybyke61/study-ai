@@ -222,6 +222,25 @@ function expandQuery(query) {
 
 }
 
+/* -------------------------- */
+/* SEMANTIC SCORE */
+/* -------------------------- */
+
+function semanticScore(query, text) {
+
+    const qWords = query.toLowerCase().split(/\W+/);
+    const tWords = text.toLowerCase().split(/\W+/);
+
+    let overlap = 0;
+
+    qWords.forEach(w => {
+      if (tWords.includes(w)) overlap++;
+  });
+
+    return overlap / qWords.length;
+
+}
+
 /* ---------------------- */
 /* SEARCH */
 /* ---------------------- */
@@ -243,7 +262,7 @@ function searchContext(query, selectedBook = "all") {
 
             scores.push({
                 text: paragraphs[i].text,
-                score: measure
+                score: measure + semantic
             });
 
         }
@@ -251,6 +270,10 @@ function searchContext(query, selectedBook = "all") {
     });
 
 });
+
+    scores = scores.filter(
+      (v, i, a) => a.findIndex(t => t.text === v.text) === i
+    );
 
     const best = scores
         .sort((a, b) => b.score - a.score)
