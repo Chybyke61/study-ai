@@ -477,7 +477,7 @@ async function hybridSearch(query, book) {
 /* ---------------------- */
 
 app.post("/deep-explain", async (req, res) => {
-
+  try {
     const { topic, book } = req.body;
 
     const contextChunks = await hybridSearch(topic, book);
@@ -503,6 +503,17 @@ Use structured sections and bullet points.
     const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
 
     res.json({ explanation: answer });
+
+} catch (error) {
+
+    console.error("Deep explain error:", error);
+
+    res.status(500).json({
+      error: "AI request failed",
+      message: error.message
+    });
+
+  }
 });
 
 app.post("/notes", async (req, res) => {
