@@ -75,6 +75,7 @@ const upload = multer({
 let tfidf = new natural.TfIdf();
 let paragraphs = [];
 let documentStore = {};
+let invertedIndex = {};
 
 /* ---------------------- */
 /* CACHE SYSTEM */
@@ -249,25 +250,40 @@ function searchContext(query, selectedBook = "all") {
 
     let scores = [];
 
+    const tokens = tokenizer.tokenize(query.toLowerCase());
+    let candidateSet = new Set();
+
+    tokens.forEach(t => {
+
+      if (invertedIndex[t]) {
+        invertedIndex[t].forEach(i => candidateSet.add(i));
+      }
+
+    });
+
     const queries = expandQuery(query.toLowerCase());
 
     queries.forEach(q => {
 
-      tfidf.tfidfs(q, (i, measure) => {
+     candidateSet.forEach(i => {
 
-        if (
-            paragraphs[i] &&
-            (selectedBook === "all" || paragraphs[i].source === selectedBook)
-        ) {
+    const measure = tfidf.tfidf(q, i);
 
-            scores.push({
-                text: paragraphs[i].text,
-                score: measure + semantic
-            });
+    if (
+      paragraphs[i] &&
+      (selectedBook === "all" || paragraphs[i].source === selectedBook)
+    ) {
 
-        }
+      const semantic = semanticScore(q, paragraphs[i].text);
 
-    });
+      scores.push({
+        text: paragraphs[i].text,
+        score: measure + semantic
+      });
+
+    }
+
+  });
 
 });
 
@@ -420,6 +436,16 @@ app.get("/books", (req, res) => {
 function addToIndex(name, chunks) {
   chunks.forEach(chunk => {
     const tokens = tokenizer.tokenize(chunk);
+
+    tokens.forEach(token => {
+
+      if (!invertedIndex[token]) {
+        invertedIndex[token] = [];
+      }
+
+      invertedIndex[token].push(index.length);
+
+    });
 
     const tf = {};
     tokens.forEach(t => {
