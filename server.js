@@ -9,7 +9,7 @@ const textract = require("textract");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
-
+const { pipeline } = require("@xenova/transformers");
 const tokenizer = new natural.WordTokenizer();
 
 const app = express();
@@ -79,6 +79,10 @@ let paragraphs = [];
 let documentStore = {};
 let invertedIndex = {};
 
+let paragraphEmbeddings = [];
+let embedder;
+let embeddings = [];
+
 /* ---------------------- */
 /* CACHE SYSTEM */
 /* ---------------------- */
@@ -102,40 +106,46 @@ function loadCache() {
 /* REBUILD INDEX */
 /* ---------------------- */
 
-function rebuildIndex() {
+async function rebuildIndex() {
 
-    tfidf = new natural.TfIdf();
-    paragraphs = [];
-    invertedIndex = {};
+  tfidf = new natural.TfIdf();
+  paragraphs = [];
+  paragraphEmbeddings = [];
+  invertedIndex = {};
 
-    for (const [file, paras] of Object.entries(documentStore)) {
+  for (const [file, paras] of Object.entries(documentStore)) {
 
-        paras.forEach(p => {
+    for (const p of paras) {
 
-            const text = p.toLowerCase();
+      const text = p.toLowerCase();
+      const index = paragraphs.length;
 
-           const index = paragraphs.length;
+      paragraphs.push({
+        text,
+        source: file
+      });
 
-            paragraphs.push({
-                text,
-                source: file
-            });
+      // TF-IDF indexing
+      tfidf.addDocument(text);
 
+      // Vector embedding
+      const vector = await embedText(p);
+      paragraphEmbeddings.push(vector);
 
-       tfidf.addDocument(text);
-
-           const tokens = tokenizer.tokenize(text);
+      // Token index (for keyword search)
+      const tokens = tokenizer.tokenize(text);
 
       tokens.forEach(t => {
         if (!invertedIndex[t]) invertedIndex[t] = [];
         invertedIndex[t].push(index);
       });
 
-   });
-
     }
 
-    console.log(`📊 Index Rebuilt: ${paragraphs.length} chunks`);
+  }
+
+  console.log(`📚 Index rebuilt: ${paragraphs.length} chunks`);
+
 }
 
 /* ---------------------- */
@@ -369,6 +379,65 @@ Rules:
 "The textbook does not provide enough information."
 `;
 
+/* -------------------------- */
+/* EMBEDDING MODEL */
+/* -------------------------- */
+
+async function loadEmbedder() {
+
+  console.log("Loading embedding model...");
+
+  embedder = await pipeline(
+    "feature-extraction",
+    "Xenova/all-MiniLM-L6-v2"
+  );
+
+  console.log("Embedding model ready");
+
+}
+
+async function embedText(text) {
+
+  const result = await embedder(text, {
+    pooling: "mean",
+    normalize: true
+  });
+
+  return Array.from(result.data);
+
+}
+
+function cosineSimilarity(a, b) {
+
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+
+}
+
+async function semanticSearch(query) {
+
+  const queryVector = await embedText(query);
+
+  const scores = paragraphEmbeddings.map((vec, index) => ({
+    index,
+    score: cosineSimilarity(queryVector, vec)
+  }));
+
+  scores.sort((a, b) => b.score - a.score);
+
+  return scores.slice(0, 5).map(s => paragraphs[s.index].text);
+
+}
+
 /* ---------------------- */
 /* AI ROUTES */
 /* ---------------------- */
@@ -377,7 +446,8 @@ app.post("/explain", async (req, res) => {
 
     const { topic, book } = req.body;
 
-    const search = searchContext(topic, book);
+    const contextChunks = await semanticSearch(topic);
+    const context = contextChunks.join("\n\n")
 
     const prompt = `
 Context from library:
@@ -599,8 +669,10 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, async () => {
 
-    loadCache();
     await loadEmbedder();
+   
+    loadCache();
+ 
     console.log("🚀 Server running on port " + PORT);
 
 });
