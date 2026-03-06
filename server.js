@@ -480,7 +480,7 @@ app.post("/deep-explain", async (req, res) => {
 
     const { topic, book } = req.body;
 
-    const contextChunks = await hybridsemanticSearch(topic, book);
+    const contextChunks = await hybridSearch(topic, book);
     const context = contextChunks.join("\n\n")
 
     const prompt = `
