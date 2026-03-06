@@ -204,6 +204,24 @@ async function extractText(file) {
     }
 }
 
+/* -------------------------- */
+/* QUERY EXPANSION */
+/* -------------------------- */
+
+function expandQuery(query) {
+
+  const expansions = [
+    query,
+    query + " explanation",
+    query + " definition",
+    query + " stages",
+    query + " process"
+  ];
+
+  return expansions;
+
+}
+
 /* ---------------------- */
 /* SEARCH */
 /* ---------------------- */
@@ -212,7 +230,11 @@ function searchContext(query, selectedBook = "all") {
 
     let scores = [];
 
-    tfidf.tfidfs(query.toLowerCase(), (i, measure) => {
+    const queries = expandQuery(query.toLowerCase());
+
+    queries.forEach(q => {
+
+      tfidf.tfidfs(q, (i, measure) => {
 
         if (
             paragraphs[i] &&
@@ -227,6 +249,8 @@ function searchContext(query, selectedBook = "all") {
         }
 
     });
+
+});
 
     const best = scores
         .sort((a, b) => b.score - a.score)
