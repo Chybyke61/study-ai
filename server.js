@@ -461,15 +461,10 @@ async function hybridSearch(query, book) {
 
   const combined = [...semanticResults, ...keywordResults];
 
-  let filtered = combined;
+  // Remove duplicates
+  const unique = [...new Set(combined)];
 
-  if (book) {
-    filtered = combined.filter(p =>
-      p.source && p.source.includes(book)
-    );
-  }
-
-  return [...new Set(filtered)].slice(0, 8).map(p => p.text || p);
+  return unique.slice(0, 8);
 }
 
 /* ---------------------- */
