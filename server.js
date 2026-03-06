@@ -372,6 +372,7 @@ app.get("/books", (req, res) => {
 app.post("/upload", upload.single("book"), async (req, res) => {
 
     try {
+        console.log("FILE RECEIVED:", req.file);
 
         if (!req.file)
             return res.status(400).json({ error: "No file uploaded." });
@@ -397,17 +398,21 @@ app.post("/upload", upload.single("book"), async (req, res) => {
         documentStore[req.file.filename] = chunks;
 
         saveCache();
-        rebuildIndex();
-
+        // rebuild only if needed
+        setImmediate(() => {
+        try {
+          rebuildIndex();
+    }   catch (err) {
+        console.error("Index rebuild failed:", err);
+    }
         res.json({
             name: req.file.filename,
             chunks: chunks.length
         });
 
-    } catch {
-
-        res.status(500).json({ error: "Upload failed." });
-
+    }  catch (err) {
+       console.error(err);
+       res.status(500).json({ error: "Upload failed." });
     }
 });
 
