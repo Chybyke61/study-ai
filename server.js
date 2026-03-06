@@ -434,8 +434,34 @@ async function semanticSearch(query) {
 
   scores.sort((a, b) => b.score - a.score);
 
-  return scores.slice(0, 5).map(s => paragraphs[s.index].text);
+  return scores.slice(0, 8).map(s => paragraphs[s.index].text);
 
+}
+
+function keywordSearch(query) {
+
+  const results = [];
+
+  tfidf.tfidfs(query, (i, measure) => {
+    results.push({
+      index: i,
+      score: measure
+    });
+  });
+
+  results.sort((a, b) => b.score - a.score);
+
+  return results.slice(0, 5).map(r => paragraphs[r.index].text);
+}
+
+async function hybridSearch(query) {
+
+  const semanticResults = await semanticSearch(query);
+  const keywordResults = keywordSearch(query);
+
+  const combined = [...semanticResults, ...keywordResults];
+
+  return [...new Set(combined)].slice(0, 8);
 }
 
 /* ---------------------- */
@@ -446,7 +472,7 @@ app.post("/deep-explain", async (req, res) => {
 
     const { topic, book } = req.body;
 
-    const contextChunks = await semanticSearch(topic);
+    const contextChunks = await hybridsemanticSearch(topic);
     const context = contextChunks.join("\n\n")
 
     const prompt = `
