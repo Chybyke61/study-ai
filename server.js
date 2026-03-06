@@ -387,6 +387,10 @@ function addToIndex(name, chunks) {
   });
 }
 
+function removeFromIndex(name) {
+  index = index.filter(entry => entry.doc !== name);
+}
+
 /* ---------------------- */
 /* UPLOAD */
 /* ---------------------- */
@@ -458,7 +462,7 @@ app.delete("/delete-book/:name", (req, res) => {
             fs.unlinkSync(filePath);
 
         saveCache();
-        rebuildIndex();
+        removeFromIndex(name);
 
         return res.json({ success: true });
 
