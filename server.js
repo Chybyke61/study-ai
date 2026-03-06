@@ -10,6 +10,8 @@ const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
 
+const tokenizer = new natural.WordTokenizer();
+
 const app = express();
 
 app.use(cors({
