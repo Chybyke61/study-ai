@@ -561,6 +561,10 @@ app.delete("/delete-book/:name", (req, res) => {
 /* START SERVER */
 /* ---------------------- */
 
+app.get("/health", (req, res) => {
+  res.json({ status: "alive" });
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
