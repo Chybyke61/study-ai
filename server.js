@@ -306,7 +306,7 @@ function searchContext(query, selectedBook = "all") {
 
     const best = scores
         .sort((a, b) => b.score - a.score)
-        .slice(0, 6);
+        .slice(0, 8);
 
     const isFound = best.length > 0 && best[0].score > 0.01;
 
@@ -314,7 +314,7 @@ function searchContext(query, selectedBook = "all") {
         context: best
             .map(r => r.text)
             .join("\n\n")
-            .slice(0, 6000),
+            .slice(0, 10000),
         isFound
     };
 }
@@ -352,16 +352,20 @@ async function askAI(prompt, system) {
 /* ---------------------- */
 
 const PROFESSOR_SYSTEM_PROMPT = `
-You are an expert university tutor helping a student study from textbooks.
+You are an expert university professor helping a student study from textbooks.
 
 Use ONLY the provided textbook context.
 
 Rules:
-- Explain clearly like a lecturer teaching a class
-- Break explanations into logical steps
-- Use bullet points if helpful
-- Do NOT invent facts outside the textbook
-- If the context is insufficient say:
+- Start directly with the explanation.
+- Provide very detailed explanations.
+- Expand concepts thoroughly.
+- Break explanations into logical sections.
+- Explain definitions, mechanisms, and processes.
+- Use bullet points where helpful.
+- Use clear academic language.
+- Do NOT invent information outside the textbook.
+- If the textbook context is insufficient say:
 "The textbook does not provide enough information."
 `;
 
@@ -380,8 +384,16 @@ Context from library:
 
 ${search.context}
 
-Explain "${topic}" like a university lecturer teaching a class.
-Use step-by-step explanation and bullet points.
+Explain "${topic}" in very detailed academic depth.
+
+Cover:
+- definition
+- mechanisms
+- important steps
+- key concepts
+- examples if present in the text
+
+Use structured sections and bullet points.
 `;
 
     const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
