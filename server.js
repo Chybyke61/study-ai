@@ -442,7 +442,7 @@ async function semanticSearch(query) {
 /* AI ROUTES */
 /* ---------------------- */
 
-app.post("/explain", async (req, res) => {
+app.post("/deep-explain", async (req, res) => {
 
     const { topic, book } = req.body;
 
