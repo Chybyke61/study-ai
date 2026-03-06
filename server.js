@@ -104,6 +104,7 @@ function rebuildIndex() {
 
     tfidf = new natural.TfIdf();
     paragraphs = [];
+    invertedIndex = {};
 
     for (const [file, paras] of Object.entries(documentStore)) {
 
@@ -111,14 +112,24 @@ function rebuildIndex() {
 
             const text = p.toLowerCase();
 
+           const index = paragraphs.length;
+
             paragraphs.push({
                 text,
                 source: file
             });
 
-            tfidf.addDocument(text);
 
-        });
+       tfidf.addDocument(text);
+
+           const tokens = tokenizer.tokenize(text);
+
+      tokens.forEach(t => {
+        if (!invertedIndex[t]) invertedIndex[t] = [];
+        invertedIndex[t].push(index);
+      });
+
+   });
 
     }
 
