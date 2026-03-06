@@ -461,11 +461,15 @@ async function hybridSearch(query, book) {
 
   const combined = [...semanticResults, ...keywordResults];
 
-  const filtered = combined.filter(p =>
-    p.source && p.source.includes(book)
-  );
+  let filtered = combined;
 
-  return [...new Set(combined)].slice(0, 8);
+  if (book) {
+    filtered = combined.filter(p =>
+      p.source && p.source.includes(book)
+    );
+  }
+
+  return [...new Set(filtered)].slice(0, 8);
 }
 
 /* ---------------------- */
