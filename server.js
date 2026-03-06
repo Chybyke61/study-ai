@@ -365,6 +365,28 @@ app.get("/books", (req, res) => {
     res.json(books);
 });
 
+
+/* -------------------------- */
+/* INDEX HELPERS */
+/* -------------------------- */
+
+function addToIndex(name, chunks) {
+  chunks.forEach(chunk => {
+    const tokens = tokenizer.tokenize(chunk);
+
+    const tf = {};
+    tokens.forEach(t => {
+      tf[t] = (tf[t] || 0) + 1;
+    });
+
+    index.push({
+      doc: name,
+      text: chunk,
+      tf
+    });
+  });
+}
+
 /* ---------------------- */
 /* UPLOAD */
 /* ---------------------- */
@@ -393,7 +415,7 @@ app.post("/upload", upload.single("book"), async (req, res) => {
             .split(/\n\s*\n/)
             .map(p => p.trim())
             .filter(p => p.length > 40)
-            .slice(0, 6000);
+            .slice(0, 1500);
 
         documentStore[req.file.filename] = chunks;
 
@@ -401,10 +423,12 @@ app.post("/upload", upload.single("book"), async (req, res) => {
         // rebuild only if needed
         setImmediate(() => {
         try {
-          rebuildIndex();
+        addToIndex(req.file.filename, chunks);
     }   catch (err) {
         console.error("Index rebuild failed:", err);
     }
+
+});
         res.json({
             name: req.file.filename,
             chunks: chunks.length
