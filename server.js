@@ -452,7 +452,7 @@ app.post("/explain", async (req, res) => {
     const prompt = `
 Context from library:
 
-${search.context}
+${context}
 
 Explain "${topic}" in very detailed academic depth.
 
