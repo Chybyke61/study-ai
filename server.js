@@ -454,12 +454,16 @@ function keywordSearch(query) {
   return results.slice(0, 5).map(r => paragraphs[r.index].text);
 }
 
-async function hybridSearch(query) {
+async function hybridSearch(query, book) {
 
   const semanticResults = await semanticSearch(query);
   const keywordResults = keywordSearch(query);
 
   const combined = [...semanticResults, ...keywordResults];
+
+  const filtered = combined.filter(p =>
+    p.source && p.source.includes(book)
+  );
 
   return [...new Set(combined)].slice(0, 8);
 }
@@ -472,7 +476,7 @@ app.post("/deep-explain", async (req, res) => {
 
     const { topic, book } = req.body;
 
-    const contextChunks = await hybridsemanticSearch(topic);
+    const contextChunks = await hybridsemanticSearch(topic, book);
     const context = contextChunks.join("\n\n")
 
     const prompt = `
