@@ -405,6 +405,11 @@ app.post("/upload", upload.single("book"), async (req, res) => {
 
         let text = await extractText(req.file);
 
+        // Prevent memory overload
+        if (text.length > 2000000) {
+        text = text.slice(0, 2000000);
+        }
+
         if (!text || text.length < 100) {
 
             fs.unlinkSync(req.file.path);
@@ -419,7 +424,7 @@ app.post("/upload", upload.single("book"), async (req, res) => {
             .split(/\n\s*\n/)
             .map(p => p.trim())
             .filter(p => p.length > 40)
-            .slice(0, 1500);
+            .slice(0, 2000);
 
         documentStore[req.file.filename] = chunks;
 
