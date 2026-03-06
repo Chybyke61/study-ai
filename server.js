@@ -230,7 +230,7 @@ function searchContext(query, selectedBook = "all") {
 
     const best = scores
         .sort((a, b) => b.score - a.score)
-        .slice(0, 8);
+        .slice(0, 6);
 
     const isFound = best.length > 0 && best[0].score > 0.01;
 
@@ -238,7 +238,7 @@ function searchContext(query, selectedBook = "all") {
         context: best
             .map(r => r.text)
             .join("\n\n")
-            .slice(0, 4000),
+            .slice(0, 6000),
         isFound
     };
 }
