@@ -409,6 +409,14 @@ Create a difficult 5-question MCQ quiz about "${topic}".
     res.json({ quiz: answer });
 });
 
+/* -------------------------- */
+/* HEALTH CHECK */
+/* -------------------------- */
+
+app.get("/health", (req, res) => {
+  res.json({ status: "alive" });
+});
+
 /* ---------------------- */
 /* BOOK ROUTES */
 /* ---------------------- */
