@@ -469,7 +469,7 @@ async function hybridSearch(query, book) {
     );
   }
 
-  return [...new Set(filtered)].slice(0, 8);
+  return [...new Set(filtered)].slice(0, 8).map(p => p.text || p);
 }
 
 /* ---------------------- */
