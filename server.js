@@ -476,8 +476,8 @@ app.post("/deep-explain", async (req, res) => {
   try {
     const { topic, book } = req.body;
 
-    const contextChunks = await hybridSearch(topic, book);
-    const context = contextChunks.join("\n\n")
+    const search = searchContext(topic, book);
+    const context = search.context;
 
     const prompt = `
 Context from library:
