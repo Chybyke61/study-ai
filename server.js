@@ -82,6 +82,7 @@ let invertedIndex = {};
 let paragraphEmbeddings = [];
 let embedder;
 let embeddings = [];
+let index = [];
 
 /* ---------------------- */
 /* CACHE SYSTEM */
@@ -339,7 +340,7 @@ async function askAI(prompt, system) {
 
         const chat = await groq.chat.completions.create({
 
-            model: "llama-3.1-8b-instant",
+            model: "llama-3.3-70b-versatile",
 
             messages: [
                 { role: "system", content: system },
@@ -582,8 +583,21 @@ app.get("/books", (req, res) => {
 /* -------------------------- */
 
 function addToIndex(name, chunks) {
+
   chunks.forEach(chunk => {
-    const tokens = tokenizer.tokenize(chunk);
+
+    const text = chunk.toLowerCase();
+
+    const paragraphIndex = paragraphs.length;
+
+    paragraphs.push({
+      text,
+      source: name
+    });
+
+    tfidf.addDocument(text);
+
+    const tokens = tokenizer.tokenize(text);
 
     tokens.forEach(token => {
 
@@ -591,25 +605,27 @@ function addToIndex(name, chunks) {
         invertedIndex[token] = [];
       }
 
-      invertedIndex[token].push(index.length);
+      invertedIndex[token].push(paragraphIndex);
 
-    });
-
-    const tf = {};
-    tokens.forEach(t => {
-      tf[t] = (tf[t] || 0) + 1;
     });
 
     index.push({
       doc: name,
-      text: chunk,
-      tf
+      text: chunk
     });
+
   });
+
 }
 
-function removeFromIndex(name) {
-  index = index.filter(entry => entry.doc !== name);
+async function removeFromIndex(name) {
+
+  delete documentStore[name];
+
+  await rebuildIndex();
+
+  saveCache();
+
 }
 
 /* ---------------------- */
@@ -674,7 +690,7 @@ app.post("/upload", upload.single("book"), async (req, res) => {
 /* DELETE BOOK */
 /* ---------------------- */
 
-app.delete("/delete-book/:name", (req, res) => {
+app.delete("/delete-book/:name", async (req, res) => {
 
     const name = decodeURIComponent(req.params.name);
 
@@ -688,7 +704,7 @@ app.delete("/delete-book/:name", (req, res) => {
             fs.unlinkSync(filePath);
 
         saveCache();
-        removeFromIndex(name);
+        await removeFromIndex(name);
 
         return res.json({ success: true });
 
