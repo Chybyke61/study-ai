@@ -477,7 +477,7 @@ app.post("/deep-explain", async (req, res) => {
     const { topic, book } = req.body;
 
     const search = searchContext(topic, book);
-    const context = search.context;
+    const context = search.context.slice(0, 4000);
 
     const prompt = `
 Context from library:
