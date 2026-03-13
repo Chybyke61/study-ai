@@ -695,9 +695,22 @@ app.post("/upload", upload.single("book"), async (req, res) => {
         console.log("FILE RECEIVED:", req.file);
 
         if (!req.file)
-            return res.status(400).json({ error: "No file uploaded." });
+    return res.status(400).json({ error: "No file uploaded." });
 
-        let text = await extractText(req.file);
+// Upload file to Supabase storage
+const fileBuffer = fs.readFileSync(req.file.path);
+
+const { data, error } = await supabase.storage
+  .from("books")
+  .upload(`uploads/${Date.now()}_${req.file.originalname}`, fileBuffer, {
+    contentType: req.file.mimetype,
+  });
+
+if (error) {
+  console.error("Supabase upload error:", error);
+}
+
+let text = await extractText(req.file);
 
         // Prevent memory overload
         if (text.length > 2000000) {
