@@ -78,6 +78,7 @@ let tfidf = new natural.TfIdf();
 let paragraphs = [];
 let documentStore = {};
 let invertedIndex = {};
+let conversationMemory = {};
 
 let paragraphEmbeddings = [];
 let embedder;
@@ -474,7 +475,12 @@ async function hybridSearch(query, book) {
 
 app.post("/deep-explain", async (req, res) => {
   try {
-    const { topic, book } = req.body;
+    const { topic, book, sessionId } = req.body;
+    let history = [];
+
+if (sessionId && conversationMemory[sessionId]) {
+    history = conversationMemory[sessionId];
+}
 
     const search = searchContext(topic, book);
     const chunks = search.context
@@ -506,7 +512,36 @@ Cover:
 Use structured sections and bullet points.
 `;
 
-    const answer = await askAI(prompt, PROFESSOR_SYSTEM_PROMPT);
+    const messages = [
+    { role: "system", content: PROFESSOR_SYSTEM_PROMPT },
+    ...history,
+    { role: "user", content: prompt }
+];
+
+const chat = await groq.chat.completions.create({
+    model: "llama3-70b-8192",
+    messages
+});
+
+const answer = chat.choices[0].message.content;
+
+if (sessionId) {
+
+    if (!conversationMemory[sessionId]) {
+        conversationMemory[sessionId] = [];
+    }
+
+    conversationMemory[sessionId].push({
+        role: "user",
+        content: prompt
+    });
+
+    conversationMemory[sessionId].push({
+        role: "assistant",
+        content: answer
+    });
+
+}
 
     res.json({ explanation: answer });
 
