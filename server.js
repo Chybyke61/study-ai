@@ -483,7 +483,10 @@ app.post("/deep-explain", async (req, res) => {
   .slice(0, 6);
 
   const formattedContext = chunks
-  .map((chunk, i) => `Section ${i + 1}:\n${chunk}`)
+  .map((chunk, i) =>  {
+    return `Section ${i + 1} (Source Evidence):
+  ${chunk}`; 
+})
   .join("\n\n");
 
     const prompt = `
