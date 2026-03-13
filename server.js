@@ -525,11 +525,11 @@ if (history.length > 0) {
 messages.push({ role: "user", content: prompt });
 
 const chat = await groq.chat.completions.create({
-    model: "llama3-70b-8192",
+    model: "llama-3.3-70b-versatile",
     messages: messages
 });
 
-const answer = chat.choices[0].message.content;
+const answer = chat.choices?.[0]?.message?.content || "No response generated.";
 
 if (sessionId) {
 
