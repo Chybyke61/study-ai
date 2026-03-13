@@ -10,11 +10,22 @@ const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js')
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 )
+
+const r2 = new S3Client({
+  region: "auto",
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+  }
+});
+
 const { pipeline } = require("@xenova/transformers");
 const tokenizer = new natural.WordTokenizer();
 
