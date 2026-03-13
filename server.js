@@ -776,7 +776,7 @@ let text = await extractText(req.file);
             .insert([
             {
                 user_id: userId,
-                filename: req.file.originalname,
+                filename: req.file.filename,
                 storage_path: `${userId}/${req.file.filename}`,
                 chunks: chunks
             }
