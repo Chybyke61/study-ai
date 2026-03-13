@@ -477,12 +477,19 @@ app.post("/deep-explain", async (req, res) => {
     const { topic, book } = req.body;
 
     const search = searchContext(topic, book);
-    const context = search.context.slice(0, 4000);
+    const chunks = search.context
+  .split("\n\n")
+  .filter(c => c.trim().length > 50)
+  .slice(0, 6);
+
+  const formattedContext = chunks
+  .map((chunk, i) => `Section ${i + 1}:\n${chunk}`)
+  .join("\n\n");
 
     const prompt = `
 Context from library:
 
-${context}
+${formattedContext}
 
 Explain "${topic}" in very detailed academic depth.
 
