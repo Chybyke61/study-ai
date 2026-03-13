@@ -741,7 +741,7 @@ const fileBuffer = fs.readFileSync(req.file.path);
 
 await r2.send(new PutObjectCommand({
   Bucket: process.env.R2_BUCKET,
-  Key: `${userId}/${Date.now()}_${req.file.originalname}`,
+  Key: `${userId}/${req.file.filename}`,
   Body: fileBuffer,
   ContentType: req.file.mimetype
 }));
