@@ -288,7 +288,7 @@ function semanticScore(query, text) {
 /* SEARCH */
 /* ---------------------- */
 
-function searchContext(query, selectedBook = "all") {
+function searchContext(query, selectedBook = "all", userId) {
 
     let scores = [];
 
@@ -313,6 +313,7 @@ function searchContext(query, selectedBook = "all") {
 
     if (
       paragraphs[i] &&
+      paragraphs[i].userId === userId &&
       (selectedBook === "all" || paragraphs[i].source === selectedBook)
     ) {
 
@@ -457,26 +458,30 @@ async function semanticSearch(query) {
 
 }
 
-function keywordSearch(query) {
+function keywordSearch(query, userId) {
 
   const results = [];
 
   tfidf.tfidfs(query, (i, measure) => {
+
+    if (paragraphs[i].userId !== userId) return;
+
     results.push({
-      index: i,
-      score: measure
+        index: i,
+        score: measure
     });
-  });
+
+});
 
   results.sort((a, b) => b.score - a.score);
 
   return results.slice(0, 5).map(r => paragraphs[r.index].text);
 }
 
-async function hybridSearch(query, book) {
+async function hybridSearch(query, book, userId) {
 
   const semanticResults = await semanticSearch(query);
-  const keywordResults = keywordSearch(query);
+  const keywordResults = keywordSearch(query, userId);
 
   const combined = [...semanticResults, ...keywordResults];
 
@@ -492,6 +497,7 @@ async function hybridSearch(query, book) {
 
 app.post("/deep-explain", async (req, res) => {
   try {
+    const userId = req.headers["x-user-id"];
     const { topic, book, sessionId } = req.body;
     let history = [];
 
@@ -499,7 +505,7 @@ if (sessionId && conversationMemory[sessionId]) {
     history = conversationMemory[sessionId];
 }
 
-    const search = searchContext(topic, book);
+    const search = searchContext(topic, book, userId);
     const chunks = search.context
   .split("\n\n")
   .filter(c => c.trim().length > 50)
@@ -666,7 +672,7 @@ app.get("/books", async (req, res) => {
 /* INDEX HELPERS */
 /* -------------------------- */
 
-function addToIndex(name, chunks) {
+function addToIndex(userId, name, chunks) {
 
   chunks.forEach(chunk => {
 
@@ -675,6 +681,7 @@ function addToIndex(name, chunks) {
     const paragraphIndex = paragraphs.length;
 
     paragraphs.push({
+      userId,
       text,
       source: name
     });
@@ -772,13 +779,14 @@ let text = await extractText(req.file);
             }
         ]);
 
-        documentStore[req.file.filename] = chunks;
+        documentsStore[userId] = documentsStore[userId] || {};
+        documentsStore[userId][req.file.filename] = chunks;
 
         saveCache();
         // rebuild only if needed
         setImmediate(() => {
         try {
-        addToIndex(req.file.filename, chunks);
+        addToIndex(userId, req.file.filename, chunks);
     }   catch (err) {
         console.error("Index rebuild failed:", err);
     }
