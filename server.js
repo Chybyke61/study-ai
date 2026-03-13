@@ -724,18 +724,17 @@ app.post("/upload", upload.single("book"), async (req, res) => {
         if (!req.file)
     return res.status(400).json({ error: "No file uploaded." });
 
-// Upload file to Supabase storage
+// Upload file to Cloudflare R2
+const userId = req.headers["x-user-id"];
+
 const fileBuffer = fs.readFileSync(req.file.path);
 
-const { data, error } = await supabase.storage
-  .from("books")
-  .upload(`uploads/${Date.now()}_${req.file.originalname}`, fileBuffer, {
-    contentType: req.file.mimetype,
-  });
-
-if (error) {
-  console.error("Supabase upload error:", error);
-}
+await r2.send(new PutObjectCommand({
+  Bucket: process.env.R2_BUCKET,
+  Key: `${userId}/${Date.now()}_${req.file.originalname}`,
+  Body: fileBuffer,
+  ContentType: req.file.mimetype
+}));
 
 let text = await extractText(req.file);
 
@@ -754,7 +753,6 @@ let text = await extractText(req.file);
 
         }
 
-        const userId = req.headers["x-user-id"];
 
         const chunks = text
             .split(/\n\s*\n/)
