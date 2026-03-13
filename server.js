@@ -619,19 +619,35 @@ app.get("/health", (req, res) => {
 /* BOOK ROUTES */
 /* ---------------------- */
 
-app.get("/books", (req, res) => {
+app.get("/books", async (req, res) => {
 
-    const books = Object.keys(documentStore).map(name => ({
+    try {
 
-        name,
+        const userId = req.headers["x-user-id"];
 
-        size: fs.existsSync(path.join(UPLOAD_DIR, name))
-            ? fs.statSync(path.join(UPLOAD_DIR, name)).size
-            : 0
+        const { data, error } = await supabase
+            .from("books")
+            .select("filename")
+            .eq("user_id", userId);
 
-    }));
+        if (error) {
+            console.error(error);
+            return res.status(500).json({ error: "Failed to load books" });
+        }
 
-    res.json(books);
+        const books = data.map(b => ({
+            name: b.filename
+        }));
+
+        res.json(books);
+
+    } catch (err) {
+
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+
+    }
+
 });
 
 
