@@ -512,15 +512,19 @@ Cover:
 Use structured sections and bullet points.
 `;
 
-    const messages = [
-    { role: "system", content: PROFESSOR_SYSTEM_PROMPT },
-    ...history,
-    { role: "user", content: prompt }
+    let messages = [
+    { role: "system", content: PROFESSOR_SYSTEM_PROMPT }
 ];
+
+if (history.length > 0) {
+    messages = messages.concat(history);
+}
+
+messages.push({ role: "user", content: prompt });
 
 const chat = await groq.chat.completions.create({
     model: "llama3-70b-8192",
-    messages
+    messages: messages
 });
 
 const answer = chat.choices[0].message.content;
