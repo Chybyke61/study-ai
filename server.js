@@ -655,9 +655,11 @@ app.get("/books", async (req, res) => {
             return res.status(500).json({ error: "Failed to load books" });
         }
 
-        const books = data.map(b => ({
-            name: b.filename
+        const books = data.map(book => ({
+            name: book.filename
         }));
+
+        console.log("BOOKS SENT:", books);
 
         res.json(books);
 
