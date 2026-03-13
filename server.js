@@ -512,6 +512,8 @@ Cover:
 Use structured sections and bullet points.
 `;
 
+history = history || [];
+
     let messages = [
     { role: "system", content: PROFESSOR_SYSTEM_PROMPT }
 ];
