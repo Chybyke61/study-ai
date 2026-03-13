@@ -34,7 +34,7 @@ const app = express();
 app.use(cors({
   origin: "*",
   methods: ["GET","POST","DELETE"],
-  allowedHeaders: ["Content-Type"]
+  allowedHeaders: ["Content-Type", "x-user-id"]
 }));
 app.get("/", (req, res) => {
     res.send("Study AI backend is running.");
@@ -498,6 +498,9 @@ async function hybridSearch(query, book, userId) {
 app.post("/deep-explain", async (req, res) => {
   try {
     const userId = req.headers["x-user-id"];
+    if (!userId) {
+        return res.status(400).json({ error: "User not authenticated" });
+    }
     const { topic, book, sessionId } = req.body;
     let history = [];
 
@@ -774,13 +777,13 @@ let text = await extractText(req.file);
             {
                 user_id: userId,
                 filename: req.file.originalname,
-                storage_path: data.path,
+                storage_path: `${userId}/${req.file.filename}`,
                 chunks: chunks
             }
         ]);
 
-        documentsStore[userId] = documentsStore[userId] || {};
-        documentsStore[userId][req.file.filename] = chunks;
+        documentStore[userId] = documentStore[userId] || {};
+        documentStore[userId][req.file.filename] = chunks;
 
         saveCache();
         // rebuild only if needed
