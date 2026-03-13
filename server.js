@@ -9,6 +9,12 @@ const textract = require("textract");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
+const { createClient } = require('@supabase/supabase-js')
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+)
 const { pipeline } = require("@xenova/transformers");
 const tokenizer = new natural.WordTokenizer();
 
