@@ -727,11 +727,25 @@ let text = await extractText(req.file);
 
         }
 
+        const userId = req.headers["x-user-id"];
+
         const chunks = text
             .split(/\n\s*\n/)
             .map(p => p.trim())
             .filter(p => p.length > 40)
             .slice(0, 2000);
+
+        // Save book metadata + chunks in Supabase
+        await supabase
+            .from("books")
+            .insert([
+            {
+                user_id: userId,
+                filename: req.file.originalname,
+                storage_path: data.path,
+                chunks: chunks
+            }
+        ]);
 
         documentStore[req.file.filename] = chunks;
 
