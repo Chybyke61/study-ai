@@ -781,8 +781,6 @@ let text = await extractText(req.file);
           {   
             user_id: userId,
             filename: req.file.filename,
-            storage_path: `${userId}/${req.file.filename}`,
-            chunks: chunks
           }
         ])
         .select();
