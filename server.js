@@ -11,6 +11,7 @@ const Groq = require("groq-sdk");
 const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js')
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
