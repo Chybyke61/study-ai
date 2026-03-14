@@ -770,92 +770,68 @@ app.post("/generate-upload-url", async (req, res) => {
 
 });
 
-app.post("/upload", upload.single("book"), async (req, res) => {
+app.post("/upload", async (req, res) => {
 
-    try {
-        console.log("FILE RECEIVED:", req.file);
+  try {
 
-        if (!req.file)
-    return res.status(400).json({ error: "No file uploaded." });
+    const userId = req.headers["x-user-id"];
+    const { fileKey, filename } = req.body;
 
-// Upload file to Cloudflare R2
-const userId = req.headers["x-user-id"];
-if (!userId) {
-  return res.status(401).json({ error: "User not authenticated" });
-}
-const fileBuffer = fs.readFileSync(req.file.path);
-
-await r2.send(new PutObjectCommand({
-  Bucket: process.env.R2_BUCKET,
-  Key: `${userId}/${req.file.filename}`,
-  Body: fileBuffer,
-  ContentType: req.file.mimetype
-}));
-
-let text = await extractText(req.file);
-
-        // Prevent memory overload
-        if (text.length > 2000000) {
-        text = text.slice(0, 2000000);
-        }
-
-        if (!text || text.length < 100) {
-
-            fs.unlinkSync(req.file.path);
-
-            return res.status(422).json({
-                error: "Could not extract text. File may be scanned image."
-            });
-
-        }
-
-
-        const chunks = text
-            .split(/\n\s*\n/)
-            .map(p => p.trim())
-            .filter(p => p.length > 40)
-            .slice(0, 2000);
-
-        // Save book metadata + chunks in Supabase
-        const { data, error } = await supabase
-        .from("books")
-        .insert([
-          {   
-            user_id: userId,
-            filename: req.file.filename,
-          }
-        ])
-        .select();
-
-        if (error) {
-            console.error("SUPABASE INSERT ERROR:", error);
-        } else {
-            console.log("BOOK SAVED TO SUPABASE:", data);
-        }
-
-        documentStore[userId] = documentStore[userId] || {};
-        documentStore[userId][req.file.filename] = chunks;
-
-        saveCache();
-        // rebuild only if needed
-        setImmediate(() => {
-        try {
-        addToIndex(userId, req.file.filename, chunks);
-    }   catch (err) {
-        console.error("Index rebuild failed:", err);
+    if (!userId || !fileKey) {
+      return res.status(400).json({ error: "Missing file info" });
     }
 
-});
-        res.json({
-            name: req.file.filename,
-            chunks: chunks.length
-        });
+    const fileUrl = `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.R2_BUCKET}/${fileKey}`;
 
-    }  catch (err) {
-       console.error(err);
-       res.status(500).json({ error: "Upload failed." });
+    // download file from R2
+    const response = await fetch(fileUrl);
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // save temporary file so extractText() works
+    const tempPath = path.join(UPLOAD_DIR, filename);
+    fs.writeFileSync(tempPath, buffer);
+
+    const fakeFile = { path: tempPath };
+
+    // extract text (supports pdf, docx, etc)
+    let text = await extractText(fakeFile);
+
+    // Prevent memory overload
+    if (!text || text.length < 50) {
+      return res.status(422).json({ error: "Could not extract text from file." });
     }
-});
+
+    const chunks = text
+      .split(/\n\s*\n/)
+      .map(p => p.trim())
+      .filter(p => p.length > 40)
+      .slice(0, 2000);
+
+    // save metadata in Supabase
+    await supabase.from("books").insert([
+      {
+        user_id: userId,
+        filename: filename,
+        storage_path: fileKey,
+        chunks: chunks
+      }
+    ]);
+
+    documentStore[userId] = documentStore[userId] || {};
+    documentStore[userId][filename] = chunks;
+
+    saveCache();
+
+    res.json({
+      name: filename
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Upload failed." });
+  }
+
+})
 
 /* ---------------------- */
 /* DELETE BOOK */
