@@ -591,6 +591,11 @@ if (sessionId) {
 
 app.post("/notes", async (req, res) => {
 
+    const userId = String(req.headers["x-user-id"] || "");
+    if (!userId) {
+        return res.status(400).json({ error: "User not authenticated" });
+    }
+
     const { topic, book } = req.body;
 
     const search = searchContext(topic, book);
@@ -610,6 +615,10 @@ Create structured study notes for "${topic}".
 
 app.post("/quiz", async (req, res) => {
 
+    const userId = String(req.headers["x-user-id"] || "");
+    if (!userId) {
+        return res.status(400).json({ error: "User not authenticated" });
+    }
     const { topic, book } = req.body;
 
     const search = searchContext(topic, book);
