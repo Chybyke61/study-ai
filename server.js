@@ -738,6 +738,38 @@ async function removeFromIndex(name) {
 /* UPLOAD */
 /* ---------------------- */
 
+app.post("/generate-upload-url", async (req, res) => {
+
+  const userId = req.headers["x-user-id"];
+  const { filename } = req.body;
+
+  if (!userId || !filename) {
+    return res.status(400).json({ error: "Missing user or filename" });
+  }
+
+  const key = `${userId}/${Date.now()}_${filename}`;
+
+  const command = new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET,
+    Key: key
+  });
+
+  try {
+
+    const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 600 });
+
+    res.json({
+      uploadUrl,
+      fileKey: key
+    });
+
+  } catch (err) {
+    console.error("Failed to generate upload URL:", err);
+    res.status(500).json({ error: "Upload URL generation failed" });
+  }
+
+});
+
 app.post("/upload", upload.single("book"), async (req, res) => {
 
     try {
