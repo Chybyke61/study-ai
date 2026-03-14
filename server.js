@@ -738,7 +738,9 @@ app.post("/upload", upload.single("book"), async (req, res) => {
 
 // Upload file to Cloudflare R2
 const userId = req.headers["x-user-id"];
-
+if (!userId) {
+  return res.status(401).json({ error: "User not authenticated" });
+}
 const fileBuffer = fs.readFileSync(req.file.path);
 
 await r2.send(new PutObjectCommand({
@@ -773,16 +775,22 @@ let text = await extractText(req.file);
             .slice(0, 2000);
 
         // Save book metadata + chunks in Supabase
-        await supabase
-            .from("books")
-            .insert([
-            {
-                user_id: userId,
-                filename: req.file.filename,
-                storage_path: `${userId}/${req.file.filename}`,
-                chunks: chunks
-            }
+        const { data, error } = await supabase
+        .from("books")
+        .insert([
+        {   
+            user_id: userId,
+            filename: req.file.filename,
+            storage_path: `${userId}/${req.file.filename}`,
+            chunks: chunks
+        }
         ]);
+
+        if (error) {
+            console.error("SUPABASE INSERT ERROR:", error);
+        } else {
+            console.log("BOOK SAVED TO SUPABASE:", data);
+        }
 
         documentStore[userId] = documentStore[userId] || {};
         documentStore[userId][req.file.filename] = chunks;
