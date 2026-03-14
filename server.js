@@ -497,7 +497,7 @@ async function hybridSearch(query, book, userId) {
 
 app.post("/deep-explain", async (req, res) => {
   try {
-    const userId = req.headers["x-user-id"];
+    const userId = String(req.headers["x-user-id"] || "");
     if (!userId) {
         return res.status(400).json({ error: "User not authenticated" });
     }
@@ -778,13 +778,14 @@ let text = await extractText(req.file);
         const { data, error } = await supabase
         .from("books")
         .insert([
-        {   
+          {   
             user_id: userId,
             filename: req.file.filename,
             storage_path: `${userId}/${req.file.filename}`,
             chunks: chunks
-        }
-        ]);
+          }
+        ])
+        .select();
 
         if (error) {
             console.error("SUPABASE INSERT ERROR:", error);
