@@ -738,100 +738,80 @@ async function removeFromIndex(name) {
 /* UPLOAD */
 /* ---------------------- */
 
-app.post("/generate-upload-url", async (req, res) => {
-
-  const userId = req.headers["x-user-id"];
-  const { filename } = req.body;
-
-  if (!userId || !filename) {
-    return res.status(400).json({ error: "Missing user or filename" });
-  }
-
-  const key = `${userId}/${Date.now()}_${filename}`;
-
-  const command = new PutObjectCommand({
-    Bucket: process.env.R2_BUCKET,
-    Key: key
-  });
-
-  try {
-
-    const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 600 });
-
-    res.json({
-      uploadUrl,
-      fileKey: key
-    });
-
-  } catch (err) {
-    console.error("Failed to generate upload URL:", err);
-    res.status(500).json({ error: "Upload URL generation failed" });
-  }
-
-});
+const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 
 app.post("/upload", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const { fileKey, filename } = req.body;
 
-  try {
+        if (!userId || !fileKey) {
+            return res.status(400).json({ error: "Missing file info" });
+        }
 
-    const userId = req.headers["x-user-id"];
-    const { fileKey, filename } = req.body;
+        console.log(`Downloading ${fileKey} from R2...`);
 
-    if (!userId || !fileKey) {
-      return res.status(400).json({ error: "Missing file info" });
+        // 1. Download file from R2 securely using SDK
+        const command = new GetObjectCommand({
+            Bucket: process.env.R2_BUCKET,
+            Key: fileKey
+        });
+
+        const response = await r2.send(command);
+        const byteArray = await response.Body.transformToByteArray();
+        const buffer = Buffer.from(byteArray);
+
+        // 2. Save temporary file so extractText() works
+        const tempPath = path.join(UPLOAD_DIR, Date.now() + "-" + filename);
+        fs.writeFileSync(tempPath, buffer);
+
+        // 3. Extract Text
+        let text = await extractText({ path: tempPath });
+
+        if (!text || text.length < 50) {
+            if (fs.existsSync(tempPath)) {
+                fs.unlinkSync(tempPath);
+            }
+            return res.status(422).json({ error: "Could not extract text from file." });
+        }
+
+        const chunks = text
+            .split(/\n\s*\n/)
+            .map(p => p.trim())
+            .filter(p => p.length > 40)
+            .slice(0, 2000);
+
+        // 4. Save metadata in Supabase (Ensuring we don't break your old schema)
+        const { error } = await supabase.from("books").insert([
+            { user_id: userId, filename: filename }
+        ]);
+
+        if (error) console.error("Supabase Error:", error);
+
+        // 5. Store in memory and RAG system
+        documentStore[userId] = documentStore[userId] || {};
+        documentStore[userId][filename] = chunks;
+        saveCache();
+
+        // 6. Restore indexing logic so AI can read it!
+        setImmediate(() => {
+            try {
+                addToIndex(userId, filename, chunks);
+            } catch (err) {
+                console.error("Index rebuild failed:", err);
+            }
+        });
+
+        // Cleanup temporary file to save server storage
+        fs.unlinkSync(tempPath);
+
+        res.json({ name: filename, success: true });
+
+    } catch (err) {
+        console.error("Upload process failed:", err);
+        res.status(500).json({ error: "Upload failed." });
     }
-
-    const fileUrl = `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${process.env.R2_BUCKET}/${fileKey}`;
-
-    // download file from R2
-    const response = await fetch(fileUrl);
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    // save temporary file so extractText() works
-    const tempPath = path.join(UPLOAD_DIR, filename);
-    fs.writeFileSync(tempPath, buffer);
-
-    const fakeFile = { path: tempPath };
-
-    // extract text (supports pdf, docx, etc)
-    let text = await extractText(fakeFile);
-
-    // Prevent memory overload
-    if (!text || text.length < 50) {
-      return res.status(422).json({ error: "Could not extract text from file." });
-    }
-
-    const chunks = text
-      .split(/\n\s*\n/)
-      .map(p => p.trim())
-      .filter(p => p.length > 40)
-      .slice(0, 2000);
-
-    // save metadata in Supabase
-    await supabase.from("books").insert([
-      {
-        user_id: userId,
-        filename: filename,
-        storage_path: fileKey,
-        chunks: chunks
-      }
-    ]);
-
-    documentStore[userId] = documentStore[userId] || {};
-    documentStore[userId][filename] = chunks;
-
-    saveCache();
-
-    res.json({
-      name: filename
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Upload failed." });
-  }
-
-})
+});
 
 /* ---------------------- */
 /* DELETE BOOK */
