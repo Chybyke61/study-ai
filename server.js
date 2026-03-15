@@ -426,10 +426,10 @@ app.post("/upload", async (req, res) => {
 
     // 2. Extract Text
     let text = await extractText({ path: tempPath });
-    if (!text || text.length < 50) {
-        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-        return res.status(422).json({ error: "Could not extract text from file." });
-    }
+   if (!text || text.length < 50) {
+    console.log("⚠️ Low text extraction, continuing anyway...");
+    text = text || "";
+}
 
     // 3. Parent-Child Chunking
     const parentChunks = recursiveChunk(text, 2000);
