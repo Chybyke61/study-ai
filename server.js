@@ -13,6 +13,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
+const e = require("express");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -325,8 +326,9 @@ for (const chunk of childChunks) {
             .from("chunks")
             .insert({
                 user_id: userId,
-                book_name: filename,
-                chunk_text: chunk
+                filename: filename,
+                content: chunk,
+                embedding: vector 
             });
     } catch (err) {
         console.error("Chunk save error:", err);
@@ -395,10 +397,19 @@ app.post("/deep-explain", async (req, res) => {
 
             if (!vectors || !chunks) continue;
 
-            vectors.forEach((vecObj, i) => {
-                const score = cosineSimilarity(queryVector, vecObj.vector);
-                results.push({ score, text: chunks[i] });
-            });
+            const { data, error } = await supabase.rpc("match_book_chunks", {
+    query_embedding: queryVector,
+    match_threshold: 0.2,
+    match_count: 5,
+    p_user_id: userId,
+    p_filename: book === "all" ? null : book
+});
+
+if (error) {
+    console.error(error);
+}
+
+const context = data.map(row => row.content).join("\n\n---\n\n");
         }
 
         if (results.length === 0) {
