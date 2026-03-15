@@ -308,6 +308,140 @@ app.post("/upload", async (req, res) => {
 }
 });
 
+app.post("/deep-explain", async (req, res) => {
+    try {
+        const { topic, book } = req.body;
+        const userId = req.headers["x-user-id"];
+
+        const queryVector = await embedText(topic.toLowerCase());
+
+        let results = [];
+
+        const vectors = vectorIndices[userId]?.[book];
+        const chunks = documentStore[userId]?.[book]?.childChunks;
+
+        if (!vectors || !chunks) {
+            return res.json({ explanation: "No context found for this book." });
+        }
+
+        vectors.forEach((vecObj, i) => {
+            const score = cosineSimilarity(queryVector, vecObj.vector);
+            results.push({ score, text: chunks[i] });
+        });
+
+        results.sort((a,b)=>b.score-a.score);
+
+        const context = results.slice(0,5).map(r=>r.text).join("\n\n---\n\n");
+
+        const prompt = `
+You are an expert professor.
+Explain the topic clearly using the textbook excerpts.
+
+Context:
+${context}
+
+Topic:
+${topic}
+`;
+
+        const chat = await groq.chat.completions.create({
+            messages:[{role:"user",content:prompt}],
+            model:"llama-3.3-70b-versatile"
+        });
+
+        res.json({ explanation: chat.choices[0].message.content });
+
+    } catch(err){
+        console.error(err);
+        res.status(500).json({ error:"Explain failed" });
+    }
+});
+
+app.post("/notes", async (req, res) => {
+    try {
+        const { topic, book } = req.body;
+        const userId = req.headers["x-user-id"];
+
+        const queryVector = await embedText(topic.toLowerCase());
+
+        let results = [];
+
+        const vectors = vectorIndices[userId]?.[book];
+        const chunks = documentStore[userId]?.[book]?.childChunks;
+
+        vectors.forEach((vecObj,i)=>{
+            const score = cosineSimilarity(queryVector, vecObj.vector);
+            results.push({score,text:chunks[i]});
+        });
+
+        results.sort((a,b)=>b.score-a.score);
+
+        const context = results.slice(0,5).map(r=>r.text).join("\n\n");
+
+        const prompt = `
+Create structured study notes from the textbook.
+
+Topic: ${topic}
+
+Context:
+${context}
+`;
+
+        const chat = await groq.chat.completions.create({
+            messages:[{role:"user",content:prompt}],
+            model:"llama-3.3-70b-versatile"
+        });
+
+        res.json({ notes: chat.choices[0].message.content });
+
+    } catch(err){
+        res.status(500).json({ error:"Notes failed" });
+    }
+});
+
+app.post("/quiz", async (req, res) => {
+    try {
+        const { topic, book } = req.body;
+        const userId = req.headers["x-user-id"];
+
+        const queryVector = await embedText(topic.toLowerCase());
+
+        let results = [];
+
+        const vectors = vectorIndices[userId]?.[book];
+        const chunks = documentStore[userId]?.[book]?.childChunks;
+
+        vectors.forEach((vecObj,i)=>{
+            const score = cosineSimilarity(queryVector, vecObj.vector);
+            results.push({score,text:chunks[i]});
+        });
+
+        results.sort((a,b)=>b.score-a.score);
+
+        const context = results.slice(0,5).map(r=>r.text).join("\n\n");
+
+        const prompt = ` 
+Create a difficult 5-question multiple choice quiz about:
+
+${topic}
+
+Use the textbook context below.
+
+${context}
+`;
+
+        const chat = await groq.chat.completions.create({
+            messages:[{role:"user",content:prompt}],
+            model:"llama-3.3-70b-versatile"
+        });
+
+        res.json({ quiz: chat.choices[0].message.content });
+
+    } catch(err){
+        res.status(500).json({ error:"Quiz failed" });
+    }
+});
+
 app.post("/chat", async (req, res) => {
     try {
         const { query, history = [], books = [] } = req.body;
