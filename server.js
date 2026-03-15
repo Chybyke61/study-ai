@@ -194,6 +194,51 @@ function cosineSimilarity(vecA, vecB) {
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+/* ADD STEP 3 HERE */
+
+async function rebuildIndexesFromSupabase() {
+
+    console.log("Rebuilding AI indexes from Supabase...");
+
+    const { data, error } = await supabase
+        .from("chunks")
+        .select("*");
+
+    if (error) {
+        console.error("Failed to load chunks:", error);
+        return;
+    }
+
+    for (const row of data) {
+
+        const userId = row.user_id;
+        const book = row.book_name;
+        const text = row.chunk_text;
+
+        if (!documentStore[userId]) documentStore[userId] = {};
+        if (!documentStore[userId][book]) {
+            documentStore[userId][book] = { childChunks: [] };
+        }
+
+        documentStore[userId][book].childChunks.push(text);
+    }
+
+    console.log("Chunks loaded from Supabase");
+
+    for (const userId in documentStore) {
+        for (const book in documentStore[userId]) {
+
+            const chunks = documentStore[userId][book].childChunks;
+
+            await addToIndex(userId, book, chunks);
+
+            console.log("Index rebuilt for", book);
+        }
+    }
+
+    console.log("AI indexes rebuilt successfully");
+}
+
 // --- ROUTES ---
 
 app.post("/generate-upload-url", async (req, res) => {
@@ -272,6 +317,21 @@ app.post("/upload", async (req, res) => {
 
         if (!documentStore[userId]) documentStore[userId] = {};
         documentStore[userId][filename] = { parentChunks, childChunks };
+
+        // Save chunks to Supabase so they survive redeploy
+for (const chunk of childChunks) {
+    try {
+        await supabase
+            .from("chunks")
+            .insert({
+                user_id: userId,
+                book_name: filename,
+                chunk_text: chunk
+            });
+    } catch (err) {
+        console.error("Chunk save error:", err);
+    }
+}
 
         // 4. Update Database
         const { error: dbError } = await supabase
@@ -638,4 +698,14 @@ app.delete("/delete-book/:name", async (req, res) => {
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, async () => {
+
+    console.log(`🚀 Server running on port ${PORT}`);
+
+    try {
+        await rebuildIndexesFromSupabase();
+    } catch (err) {
+        console.error("Startup index rebuild failed:", err);
+    }
+
+});
