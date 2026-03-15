@@ -12,7 +12,7 @@ const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { pipeline } = require("@xenova/transformers");
+const { pipeline, max } = require("@xenova/transformers");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -353,21 +353,34 @@ app.post("/deep-explain", async (req, res) => {
             .join("\n\n---\n\n");
 
         const prompt = `
-You are an expert professor.
+You are a senior university professor teaching a student.
 
-Explain the topic clearly using the textbook context.
+Use ONLY the textbook context below.
 
-Topic:
-${topic}
+Topic: ${topic}
 
-Context:
+Textbook Context:
 ${context}
+
+Explain the topic in a **detailed academic lecture format**.
+
+Your explanation must include:
+
+1. **Definition**
+2. **Detailed explanation of the concept**
+3. **Mechanism or process involved**
+4. **Important key terms (bolded)**
+5. **Examples if possible**
+6. **Bullet points summarizing the concept**
+
+Write a long and detailed explanation (minimum 300 words).
 `;
 
         const chat = await groq.chat.completions.create({
             messages: [{ role:"user", content:prompt }],
             model: "llama-3.3-70b-versatile",
-            temperature: 0.5
+            temperature: 0.3,
+            max_tokens: 2000
         });
 
         res.json({
@@ -421,13 +434,23 @@ app.post("/notes", async (req, res) => {
             .join("\n\n");
 
         const prompt = `
-Create structured study notes.
+Create **detailed university-level study notes**.
 
 Topic: ${topic}
 
-Use the textbook context below.
-
+Textbook Context:
 ${context}
+
+Structure the notes like this:
+
+# Topic Overview
+# Key Definitions
+# Important Concepts
+# Mechanisms or Processes
+# Bullet Point Summary
+# Exam Tips
+
+The notes must be detailed and structured for studying.
 `;
 
         const chat = await groq.chat.completions.create({
@@ -485,14 +508,31 @@ ${context}
             .map(r=>r.text)
             .join("\n\n");
 
-        const prompt =` 
-Create a 5 question multiple choice quiz.
+        const prompt = `
+Create a **difficult university-level quiz**.
 
 Topic: ${topic}
 
-Use the textbook context below.
-
+Textbook Context:
 ${context}
+
+Requirements:
+
+• 5 multiple choice questions  
+• Each question must have 4 options  
+• Show the correct answer  
+• Provide a short explanation  
+
+Format:
+
+Question 1  
+A)  
+B)  
+C)  
+D)  
+
+Correct Answer:  
+Explanation:
 `;
 
         const chat = await groq.chat.completions.create({
