@@ -419,11 +419,15 @@ app.post("/upload", async (req, res) => {
     // 1. Secure Download from R2
     const command = new GetObjectCommand({ Bucket: process.env.R2_BUCKET, Key: fileKey });
     const response = await r2.send(command);
-    const byteArray = await response.Body.transformToByteArray();
-    
     const tempPath = path.join(UPLOAD_DIR, Date.now() + "-" + filename);
-    fs.writeFileSync(tempPath, Buffer.from(byteArray));
 
+    const writeStream = fs.createWriteStream(tempPath);
+
+    await new Promise((resolve, reject) => {
+    response.Body.pipe(writeStream);
+    response.Body.on("error", reject);
+    writeStream.on("finish", resolve);
+    });
     // 2. Extract Text
     let text = await extractText({ path: tempPath });
    if (!text || text.length < 50) {
