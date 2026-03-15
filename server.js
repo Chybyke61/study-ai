@@ -230,7 +230,7 @@ async function reRankChunks(query, chunks) {
 
     try {
         const response = await groq.chat.completions.create({
-            model: "llama3-8b-8192", 
+            model: "llama-3.3-70b-versatile", 
             messages: [{ role: "user", content: rankingPrompt }],
         });
 
@@ -258,7 +258,7 @@ async function retrieveAdvancedContext(userId, topic, book) {
     try {
         // 1. Query Expansion
         const expansion = await groq.chat.completions.create({
-            model: "llama3-8b-8192",
+            model: "llama-3.3-70b-versatile",
             messages: [{
                 role: "system",
                 content: "Give me 3 technical keywords or synonyms related to the user's question to help search a textbook. Return only keywords."
