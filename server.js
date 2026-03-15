@@ -313,6 +313,13 @@ app.post("/deep-explain", async (req, res) => {
         const { topic, book } = req.body;
         const userId = req.headers["x-user-id"];
 
+        if (!topic) {
+            return res.status(400).json({ error: "Topic required" });
+        }
+
+        const queryVector = await embedText(topic.toLowerCase());
+
+        let results = [];
         let booksToSearch = [];
 
         if (book === "all") {
@@ -320,10 +327,6 @@ app.post("/deep-explain", async (req, res) => {
         } else {
             booksToSearch = [book];
         }
-
-        const queryVector = await embedText(topic.toLowerCase());
-
-        let results = [];
 
         for (const b of booksToSearch) {
 
@@ -334,114 +337,93 @@ app.post("/deep-explain", async (req, res) => {
 
             vectors.forEach((vecObj, i) => {
                 const score = cosineSimilarity(queryVector, vecObj.vector);
-            results.push({ score, text: chunks[i] });
+                results.push({ score, text: chunks[i] });
             });
         }
 
-        if (!vectors || !chunks) {
-            return res.json({ explanation: "No context found for this book." });
+        if (results.length === 0) {
+            return res.json({ explanation: "No study material found for this topic." });
         }
-
-        vectors.forEach((vecObj, i) => {
-            const score = cosineSimilarity(queryVector, vecObj.vector);
-            results.push({ score, text: chunks[i] });
-        });
 
         results.sort((a,b)=>b.score-a.score);
 
-        const context = results.slice(0,5).map(r=>r.text).join("\n\n---\n\n");
+        const context = results
+            .slice(0,5)
+            .map(r=>r.text)
+            .join("\n\n---\n\n");
 
         const prompt = `
 You are an expert professor.
-Explain the topic clearly using the textbook excerpts.
 
-Context:
-${context}
+Explain the topic clearly using the textbook context.
 
 Topic:
 ${topic}
-`;
-
-        const chat = await groq.chat.completions.create({
-            messages:[{role:"user",content:prompt}],
-            model:"llama-3.3-70b-versatile"
-        });
-
-        res.json({ explanation: chat.choices[0].message.content });
-
-    } catch(err){
-        console.error(err);
-        res.status(500).json({ error:"Explain failed" });
-    }
-});
-
-app.post("/notes", async (req, res) => {
-    try {
-        const { topic, book } = req.body;
-        const userId = req.headers["x-user-id"];
-
-        const queryVector = await embedText(topic.toLowerCase());
-
-        let results = [];
-
-        const vectors = vectorIndices[userId]?.[book];
-        const chunks = documentStore[userId]?.[book]?.childChunks;
-
-        vectors.forEach((vecObj,i)=>{
-            const score = cosineSimilarity(queryVector, vecObj.vector);
-            results.push({score,text:chunks[i]});
-        });
-
-        results.sort((a,b)=>b.score-a.score);
-
-        const context = results.slice(0,5).map(r=>r.text).join("\n\n");
-
-        const prompt = `
-Create structured study notes from the textbook.
-
-Topic: ${topic}
 
 Context:
 ${context}
 `;
 
         const chat = await groq.chat.completions.create({
-            messages:[{role:"user",content:prompt}],
-            model:"llama-3.3-70b-versatile"
+            messages: [{ role:"user", content:prompt }],
+            model: "llama-3.3-70b-versatile",
+            temperature: 0.5
         });
 
-        res.json({ notes: chat.choices[0].message.content });
+        res.json({
+            explanation: chat.choices[0].message.content
+        });
 
-    } catch(err){
-        res.status(500).json({ error:"Notes failed" });
+    } catch(err) {
+        console.error("Explain error:", err);
+        res.status(500).json({ error:"Explain failed" });
     }
 });
-
-app.post("/quiz", async (req, res) => {
+app.post("/notes", async (req, res) => {
     try {
+
         const { topic, book } = req.body;
         const userId = req.headers["x-user-id"];
 
         const queryVector = await embedText(topic.toLowerCase());
 
         let results = [];
+        let booksToSearch = [];
 
-        const vectors = vectorIndices[userId]?.[book];
-        const chunks = documentStore[userId]?.[book]?.childChunks;
+        if (book === "all") {
+            booksToSearch = Object.keys(vectorIndices[userId] || {});
+        } else {
+            booksToSearch = [book];
+        }
 
-        vectors.forEach((vecObj,i)=>{
-            const score = cosineSimilarity(queryVector, vecObj.vector);
-            results.push({score,text:chunks[i]});
-        });
+        for (const b of booksToSearch) {
+
+            const vectors = vectorIndices[userId]?.[b];
+            const chunks = documentStore[userId]?.[b]?.childChunks;
+
+            if (!vectors || !chunks) continue;
+
+            vectors.forEach((vecObj,i)=>{
+                const score = cosineSimilarity(queryVector, vecObj.vector);
+                results.push({score,text:chunks[i]});
+            });
+        }
+
+        if (results.length === 0) {
+            return res.json({ notes:"No study material found." });
+        }
 
         results.sort((a,b)=>b.score-a.score);
 
-        const context = results.slice(0,5).map(r=>r.text).join("\n\n");
+        const context = results
+            .slice(0,5)
+            .map(r=>r.text)
+            .join("\n\n");
 
-        const prompt = ` 
-Create a difficult 5-question multiple choice quiz about:
+        const prompt = `
+Create structured study notes.
 
-${topic}
+Topic: ${topic}
 
 Use the textbook context below.
 
@@ -453,9 +435,77 @@ ${context}
             model:"llama-3.3-70b-versatile"
         });
 
-        res.json({ quiz: chat.choices[0].message.content });
+        res.json({
+            notes: chat.choices[0].message.content
+        });
 
     } catch(err){
+        console.error("Notes error:", err);
+        res.status(500).json({ error:"Notes failed" });
+    }
+});
+  app.post("/quiz", async (req, res) => {
+    try {
+
+        const { topic, book } = req.body;
+        const userId = req.headers["x-user-id"];
+
+        const queryVector = await embedText(topic.toLowerCase());
+
+        let results = [];
+        let booksToSearch = [];
+
+        if (book === "all") {
+            booksToSearch = Object.keys(vectorIndices[userId] || {});
+        } else {
+            booksToSearch = [book];
+        }
+
+        for (const b of booksToSearch) {
+
+            const vectors = vectorIndices[userId]?.[b];
+            const chunks = documentStore[userId]?.[b]?.childChunks;
+
+            if (!vectors || !chunks) continue;
+
+            vectors.forEach((vecObj,i)=>{
+                const score = cosineSimilarity(queryVector, vecObj.vector);
+                results.push({score,text:chunks[i]});
+            });
+        }
+
+        if (results.length === 0) {
+            return res.json({ quiz:"No study material found." });
+        }
+
+        results.sort((a,b)=>b.score-a.score);
+
+        const context = results
+            .slice(0,5)
+            .map(r=>r.text)
+            .join("\n\n");
+
+        const prompt =` 
+Create a 5 question multiple choice quiz.
+
+Topic: ${topic}
+
+Use the textbook context below.
+
+${context}
+`;
+
+        const chat = await groq.chat.completions.create({
+            messages:[{role:"user",content:prompt}],
+            model:"llama-3.3-70b-versatile"
+        });
+
+        res.json({
+            quiz: chat.choices[0].message.content
+        });
+
+    } catch(err){
+        console.error("Quiz error:", err);
         res.status(500).json({ error:"Quiz failed" });
     }
 });
