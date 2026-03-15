@@ -12,7 +12,7 @@ const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { pipeline } = require("@xenova/transformers");
+
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -50,7 +50,6 @@ let documentStore = {};  // { userId: { filename: { parents: [], children: [] } 
 let keywordIndices = {}; // { userId: { filename: tfidf_instance } }
 let vectorIndices = {};  // { userId: { filename: [ { text, vector } ] } }
 
-let embedder;
 
 /* ---------------------- */
 /* CACHE SYSTEM           */
@@ -94,15 +93,22 @@ function recursiveChunk(text, size = 2000) {
 }
 
 // Embeddings Tool
-async function loadEmbedder() {
-    console.log("Loading embedding model...");
-    embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-    console.log("Embedding model ready");
-}
 
 async function embedText(text) {
-    const result = await embedder(text, { pooling: "mean", normalize: true });
-    return Array.from(result.data);
+    try {
+        const response = await groq.embeddings.create({
+            model: "text-embedding-3-small",
+            input: text.slice(0, 2000)
+        });
+
+        return response.data[0].embedding;
+
+    } catch (err) {
+        console.error("Groq Embedding Error:", err);
+
+        // return empty vector to avoid crash
+        return new Array(1536).fill(0);
+    }
 }
 
 function cosineSimilarity(a, b) {
@@ -125,27 +131,31 @@ async function addToIndex(userId, filename, children) {
 
     children.forEach(text => tfidf.addDocument(text.toLowerCase()));
 
-    const batchSize = 50;
+   const batchSize = 50;
 
 for (let i = 0; i < children.length; i += batchSize) {
+
     try {
-        const batch = children
-            .slice(i, i + batchSize)
-            .filter(t => t && t.trim().length > 20);
+
+        const batch = children.slice(i, i + batchSize);
 
         const batchVectors = await Promise.all(
             batch.map(async text => ({
                 text,
-                vector: await embedText(String(text).toLowerCase())
+                vector: await embedText(text.toLowerCase())
             }))
         );
 
+        batchVectors.forEach(v => tfidf.addDocument(v.text.toLowerCase()));
+
         vectors.push(...batchVectors);
 
-        console.log(`Indexed ${vectors.length}/${children.length} chunks...`);
+        console.log(`Indexed ${vectors.length}/${children.length} chunks`);
 
     } catch (err) {
+
         console.error(`Batch starting at ${i} failed, skipping..., err`);
+
     }
 }
     keywordIndices[userId][filename] = tfidf;
@@ -494,7 +504,6 @@ app.get("/health", (req, res) => res.json({ status: "alive" }));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
-    await loadEmbedder();
     await loadCache();
     console.log("🚀 Advanced RAG Server running on port " + PORT);
 });
