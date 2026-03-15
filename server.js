@@ -313,12 +313,30 @@ app.post("/deep-explain", async (req, res) => {
         const { topic, book } = req.body;
         const userId = req.headers["x-user-id"];
 
+        let booksToSearch = [];
+
+        if (book === "all") {
+            booksToSearch = Object.keys(vectorIndices[userId] || {});
+        } else {
+            booksToSearch = [book];
+        }
+
         const queryVector = await embedText(topic.toLowerCase());
 
         let results = [];
 
-        const vectors = vectorIndices[userId]?.[book];
-        const chunks = documentStore[userId]?.[book]?.childChunks;
+        for (const b of booksToSearch) {
+
+            const vectors = vectorIndices[userId]?.[b];
+            const chunks = documentStore[userId]?.[b]?.childChunks;
+
+            if (!vectors || !chunks) continue;
+
+            vectors.forEach((vecObj, i) => {
+                const score = cosineSimilarity(queryVector, vecObj.vector);
+            results.push({ score, text: chunks[i] });
+            });
+        }
 
         if (!vectors || !chunks) {
             return res.json({ explanation: "No context found for this book." });
