@@ -97,7 +97,7 @@ function recursiveChunk(text, size = 2000) {
 async function embedText(text) {
     try {
         const response = await groq.embeddings.create({
-            model: "nomic-embed-text-v1",
+            model: "nomic-embed-text-v1.5",
             input: text.slice(0, 2000)
         });
 
