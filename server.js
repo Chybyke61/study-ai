@@ -198,8 +198,13 @@ function cosineSimilarity(vecA, vecB) {
 
 app.post("/upload", async (req, res) => {
     try {
+        console.log("UPLOAD ROUTE HIT");
         const userId = req.headers["x-user-id"];
         const { fileKey, filename } = req.body;
+
+        console.log("User:", userId);
+        console.log("File Key:", fileKey);
+        console.log("Filename:", filename);
 
         if (!userId || !fileKey || !filename) {
             return res.status(400).json({ error: "Missing upload data." });
