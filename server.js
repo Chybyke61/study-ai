@@ -196,7 +196,38 @@ function cosineSimilarity(vecA, vecB) {
 
 // --- ROUTES ---
 
+app.post("/generate-upload-url", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const { filename } = req.body;
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing filename or user." });
+        }
+
+        const key = `${userId}/${Date.now()}_${filename}`;
+
+        const command = new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET,
+            Key: key,
+            ContentType: "application/octet-stream"
+        });
+
+        const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 600 });
+
+        res.json({
+            uploadUrl,
+            fileKey: key
+        });
+
+    } catch (err) {
+        console.error("Signed URL generation failed:", err);
+        res.status(500).json({ error: "Could not generate upload URL." });
+    }
+});
+
 app.post("/upload", async (req, res) => {
+    let tempPath = null;
     try {
         console.log("UPLOAD ROUTE HIT");
         const userId = req.headers["x-user-id"];
@@ -210,7 +241,7 @@ app.post("/upload", async (req, res) => {
             return res.status(400).json({ error: "Missing upload data." });
         }
 
-        const tempPath = path.join(UPLOAD_DIR, Date.now() + "-" + filename);
+        tempPath = path.join(UPLOAD_DIR, Date.now() + "-" + filename);
 
         // 1. Stream from R2
         const command = new GetObjectCommand({
