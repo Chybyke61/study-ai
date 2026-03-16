@@ -202,7 +202,7 @@ async function rebuildIndexesFromSupabase() {
     console.log("Rebuilding AI indexes from Supabase...");
 
     const { data, error } = await supabase
-        .from("chunks")
+        .from("book_chunks")
         .select("*");
 
     if (error) {
@@ -323,7 +323,7 @@ app.post("/upload", async (req, res) => {
 for (const chunk of childChunks) {
     try {
         await supabase
-            .from("chunks")
+            .from("book_chunks")
             .insert({
                 user_id: userId,
                 filename: filename,
