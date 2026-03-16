@@ -400,6 +400,30 @@ app.post("/deep-explain", async (req, res) => {
             p_filename: book === "all" ? null : book
         });
 
+        let keywordResults = [];
+
+if (keywordIndices[userId] && keywordIndices[userId][book]) {
+
+  const tfidf = keywordIndices[userId][book];
+
+  tfidf.tfidfs(topic, function(i, measure) {
+    keywordResults.push({
+      score: measure,
+      text: documentStore[userId][book].childChunks[i]
+    });
+  });
+
+  keywordResults.sort((a,b)=>b.score-a.score);
+
+  keywordResults = keywordResults.slice(0,3);
+
+}
+
+const vectorContext = data ? data.map(row => row.content) : [];
+const keywordContext = keywordResults.map(r => r.text);
+
+const combinedContext = [...vectorContext, ...keywordContext];
+
         console.log("Vector search results:", data);
 
         if (error) {
@@ -409,7 +433,9 @@ app.post("/deep-explain", async (req, res) => {
   return res.json({ explanation: "No study material found for this topic." });
 }
 
-const context = data.map(row => row.content).join("\n\n---\n\n")
+const context = combinedContext
+.slice(0,8)
+.join("\n\n---\n\n");
     
 
         const prompt = `
