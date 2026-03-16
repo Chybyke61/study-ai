@@ -449,7 +449,7 @@ Textbook Context:
 ${context}
 
 Topic:
-${query}
+${topic}
 `;
 
         const chat = await groq.chat.completions.create({
