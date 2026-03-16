@@ -222,7 +222,7 @@ async function rebuildIndexesFromSupabase() {
         const text = row.content;
 
         if (!userId || !book || !text) continue;
-        
+
         if (!documentStore[userId]) documentStore[userId] = {};
         if (!documentStore[userId][book]) {
             documentStore[userId][book] = { childChunks: [] };
@@ -394,11 +394,13 @@ app.post("/deep-explain", async (req, res) => {
             const { data, error } = await 
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
-            match_threshold: 0.2,
-            match_count: 5,
+            match_threshold: 0,
+            match_count: 8,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
         });
+
+        console.log("Vector search results:", data);
 
         if (error) {
     console.error("Vector search error:", error);
