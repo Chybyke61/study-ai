@@ -425,6 +425,10 @@ const keywordContext = keywordResults.map(r => r.text);
 const combinedContext = [...vectorContext, ...keywordContext];
 
         console.log("Vector search results:", data);
+        console.log("Vector results:", vectorContext.length);
+        console.log("Hybrid retrieval working:");
+console.log("Keyword results:", keywordResults.length);
+console.log("Combined results:", combinedContext.length);
 
         if (error) {
     console.error("Vector search error:", error);
@@ -438,44 +442,28 @@ const context = combinedContext
 .join("\n\n---\n\n");
     
 
-        const prompt = `
-You are an advanced study assistant.
+ const prompt = `
+You are an expert academic tutor.
 
-Your job is to explain a concept clearly using ONLY the provided textbook context.
-
-Rules:
-• Do NOT act like a lecturer
-• Do NOT say "welcome students"
-• Do NOT add storytelling
-• Focus directly on the concept
-• Write detailed academic explanations
-• Organize the answer clearly
-
-Format the answer in this structure:
-
-Definition
-Provide a clear definition of the concept.
-
-Explanation
-Give a detailed explanation using the information from the textbook context.
-
-Key Concepts
-List and explain the most important ideas related to the topic.
-
-Processes or Mechanisms
-If the topic involves a process, explain it step-by-step.
-
-Important Points
-Highlight critical facts, technical details, or conditions.
-
-Summary
-Provide a concise but complete summary of the topic.
+Instructions:
+- Do NOT greet the user.
+- Do NOT say "Welcome", "Hello", or address the student directly.
+- Start immediately with the explanation of the topic.
+- Do NOT include a "Definition" section.
+- Organize the explanation using clear headings.
+- Each heading should explain an important concept related to the topic.
+- Write detailed explanations so the student can understand the topic without reading the textbook.
+- Expand mechanisms, processes, causes, and relationships thoroughly.
+- Use clear academic language suitable for university-level learning.
+- Avoid short answers.
 
 Textbook Context:
 ${context}
 
 Topic:
 ${topic}
+
+Provide a structured explanation using headings and detailed paragraphs.
 `;
 
         const chat = await groq.chat.completions.create({
