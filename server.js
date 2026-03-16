@@ -218,9 +218,11 @@ async function rebuildIndexesFromSupabase() {
     for (const row of data) {
 
         const userId = row.user_id;
-        const book = row.book_name;
-        const text = row.chunk_text;
+        const book = row.filename;
+        const text = row.content;
 
+        if (!userId || !book || !text) continue;
+        
         if (!documentStore[userId]) documentStore[userId] = {};
         if (!documentStore[userId][book]) {
             documentStore[userId][book] = { childChunks: [] };
