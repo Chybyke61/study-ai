@@ -321,6 +321,9 @@ app.post("/upload", async (req, res) => {
 
         // Save chunks to Supabase so they survive redeploy
 for (const chunk of childChunks) {
+
+    const vector = await embedText(chunk);
+
     try {
         await supabase
             .from("book_chunks")
