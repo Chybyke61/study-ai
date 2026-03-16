@@ -154,19 +154,24 @@ async function addToIndex(userId, filename, children) {
     // Strict batch size prevents buffer overflow on constrained hardware
     const batchSize = 20; 
 
-    children.forEach(chunk => tfidf.addDocument(chunk.toLowerCase()));
+    children.forEach(chunk => {
+    if (!chunk || typeof chunk !== "string") return;
+    tfidf.addDocument(chunk.toLowerCase());
+});
 
     for (let i = 0; i < children.length; i += batchSize) {
         try {
             const batch = children
                 .slice(i, i + batchSize)
-                .filter(t => t && t.trim().length > 20);
+                .filter(t => typeof t === "string" && t.trim().length > 20);
 
             const batchVectors = await Promise.all(
-                batch.map(async text => ({
-                    text,
-                    vector: await embedText(String(text).toLowerCase())
-                }))
+                batch
+                    .filter(t => typeof t === "string" && t.trim().length > 20)
+                    .map(async text => ({
+                        text,
+                        vector: await embedText(text.toLowerCase())
+                    }))
             );
 
             vectors.push(...batchVectors);
