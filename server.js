@@ -384,47 +384,24 @@ app.post("/deep-explain", async (req, res) => {
 
         const queryVector = await embedText(topic.toLowerCase());
 
-        let results = [];
-        let booksToSearch = [];
+            const { data, error } = await 
+            supabase.rpc("match_book_chunks", {
+            query_embedding: queryVector,
+            match_threshold: 0.2,
+            match_count: 5,
+            p_user_id: userId,
+            p_filename: book === "all" ? null : book
+        });
 
-        if (book === "all") {
-            booksToSearch = Object.keys(vectorIndices[userId] || {});
-        } else {
-            booksToSearch = [book];
-        }
-
-        for (const b of booksToSearch) {
-
-            const vectors = vectorIndices[userId]?.[b];
-            const chunks = documentStore[userId]?.[b]?.childChunks;
-
-            if (!vectors || !chunks) continue;
-
-            const { data, error } = await supabase.rpc("match_book_chunks", {
-    query_embedding: queryVector,
-    match_threshold: 0.2,
-    match_count: 5,
-    p_user_id: userId,
-    p_filename: book === "all" ? null : book
-});
-
-if (error) {
-    console.error(error);
+        if (error) {
+    console.error("Vector search error:", error);
+}
+        if (!data || data.length === 0) {
+  return res.json({ explanation: "No study material found for this topic." });
 }
 
-const context = data.map(row => row.content).join("\n\n---\n\n");
-        }
-
-        if (results.length === 0) {
-            return res.json({ explanation: "No study material found for this topic." });
-        }
-
-        results.sort((a,b)=>b.score-a.score);
-
-        const context = results
-            .slice(0,5)
-            .map(r=>r.text)
-            .join("\n\n---\n\n");
+const context = data.map(row => row.content).join("\n\n---\n\n")
+    
 
         const prompt = `
 You are an advanced study assistant.
