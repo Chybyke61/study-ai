@@ -446,7 +446,7 @@ Summary
 Provide a concise but complete summary of the topic.
 
 Textbook Context:
-${topMatches}
+${context}
 
 Topic:
 ${query}
