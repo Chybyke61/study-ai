@@ -138,7 +138,7 @@ async function extractText(file) {
  // ======================
 // ✅ DOCX FIX (PASTE HERE)
 // ======================
-        else if (ext === ".docx") {
+        if (ext === ".docx") {
            console.log("📄 Reading DOCX with mammoth...");
 
            const result = await mammoth.extractRawText({
