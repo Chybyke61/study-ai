@@ -14,6 +14,7 @@ const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/clien
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
+const Tesseract = require("tesseract.js");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -103,19 +104,44 @@ async function extractText(file) {
             }
         }
 
-        // Attempt 2: Textract (Fallback)
-        return new Promise((resolve) => {
-            textract.fromFileWithPath(file.path, { preserveLineBreaks: true }, (err, text) => {
-                if (err) {
-                    console.error("❌ All extraction methods failed:", err);
-                    return resolve("");
-                }
-                resolve(text || "");
-            });
-        });
+       // Attempt 2: Textract
+const textractText = await new Promise((resolve) => {
+    textract.fromFileWithPath(file.path, { preserveLineBreaks: true }, (err, text) => {
+        if (err) {
+            console.warn("⚠️ Textract failed, moving to OCR...");
+            return resolve("");
+        }
+        resolve(text || "");
+    });
+});
+
+// If textract worked, return it
+if (textractText && textractText.trim().length > 50) {
+    return textractText;
+}
+
+// Attempt 3: OCR (FINAL fallback)
+console.warn("🧠 Running OCR fallback...");
+const ocrText = await runOCR(file.path);
+
+return ocrText || "";
 
     } catch (globalErr) {
         console.error("🔥 Critical extraction crash:", globalErr);
+        return "";
+    }
+}
+
+async function runOCR(filePath) {
+    try {
+        const { data: { text } } = await Tesseract.recognize(
+            filePath,
+            "eng"
+        );
+
+        return text;
+    } catch (err) {
+        console.error("OCR failed:", err);
         return "";
     }
 }
