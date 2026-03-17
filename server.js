@@ -14,7 +14,6 @@ const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/clien
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
-const Tesseract = require("tesseract.js");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -147,52 +146,9 @@ async function extractText(file) {
         return textractText;
     }
 
-    console.warn("⚠️ Falling back to OCR...");
-
-    // 🔹 STEP 3: OCR (optimized)
-    const stats = fs.statSync(file.path);
-
-    if (stats.size > 5 * 1024 * 1024) {
-        console.warn("⚠️ File too large, skipping OCR");
-        return "";
-    }
-
-    let ocrText = await runOCR(file.path);
-
-    if (!isGoodText(ocrText)) {
-        console.warn("⚠️ Low OCR result, running full OCR...");
-        const { data: { text } } = await Tesseract.recognize(file.path, "eng");
-        ocrText = text;
-    }
-
-    return ocrText;
+    console.warn("⚠️ Could not extract readable text from PDF.");
+    return "";
 }
-
-    } catch (globalErr) {
-        console.error("🔥 Critical extraction crash:", globalErr);
-        return "";
-    }
-}
-
-async function runOCR(filePath) {
-    try {
-        // Only allow PDF OCR
-        if (path.extname(filePath).toLowerCase() !== ".pdf") {
-            return "";
-        }
-        console.log("🧠 Running fast partial OCR...");
-
-        const { data: { text } } = await Tesseract.recognize(
-            filePath,
-            "eng",
-            {
-                tessedit_pageseg_mode: "1", // faster layout detection
-                tessedit_ocr_engine_mode: "1" // faster engine
-            }
-        );
-
-        return text;
-
     } catch (err) {
         console.error("OCR failed:", err);
         return "";
@@ -442,23 +398,42 @@ app.post("/upload", async (req, res) => {
         documentStore[userId][filename] = { parentChunks, childChunks };
 
         // Save chunks to Supabase so they survive redeploy
-for (const chunk of childChunks) {
+console.log(`⚡️ Embedding ${childChunks.length} chunks...`);
 
-    const vector = await embedText(chunk);
+const batchSize = 20;
+const insertBatch = [];
 
-    try {
-        await supabase
-            .from("book_chunks")
-            .insert({
-                user_id: userId,
-                filename: filename,
-                content: chunk,
-                embedding: vector 
-            });
-    } catch (err) {
-        console.error("Chunk save error:", err);
-    }
+for (let i = 0; i < childChunks.length; i += batchSize) {
+
+    const batch = childChunks.slice(i, i + batchSize);
+
+    const vectors = await Promise.all(
+        batch.map(chunk => embedText(chunk))
+    );
+
+    vectors.forEach((vector, idx) => {
+        insertBatch.push({
+            user_id: userId,
+            filename,
+            content: batch[idx],
+            embedding: vector
+        });
+    });
+
+    console.log(`📊 Progress: ${Math.min(i + batch.length, childChunks.length)}/${childChunks.length}`);
 }
+
+// ONE INSERT (FAST 🚀)
+const { error } = await supabase
+    .from("book_chunks")
+    .insert(insertBatch);
+
+if (error) {
+    console.error("❌ Supabase batch insert error:", error);
+    throw new Error("Failed saving chunks");
+}
+
+console.log("✅ All chunks saved successfully");
 
         // 4. Update Database
         const { error: dbError } = await supabase
@@ -553,7 +528,7 @@ console.log("Combined results:", combinedContext.length);
 }
 
 // Extract raw chunks
-const rawChunks = results.map(r => r.text);
+const rawChunks = combinedContext;
 
 // 🔥 Smart rerank (only when needed)
 let bestChunks;
