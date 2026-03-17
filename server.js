@@ -122,6 +122,7 @@ async function extractText(file) {
     let pdfText = "";
     try {
         const data = await pdfParse(buffer);
+        console.log("RAW PDF TEXT SAMPLE:", data.text.slice(0, 200));
         pdfText = data.text;
         console.log("Extracted preview:", pdfText?.slice(0, 100));
     } catch (err) {
@@ -570,7 +571,12 @@ if (rawChunks.length > 5) {
 }
 
 // Build final context
-const context = bestChunks.join("\n\n---\n\n");
+// 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
+const limitedChunks = bestChunks.slice(0, 3); // reduce from 5 → 3
+
+const context = limitedChunks
+    .map(c => c.slice(0, 800)) // limit each chunk
+    .join("\n\n---\n\n");
     
 
  const prompt = `
@@ -587,6 +593,7 @@ Instructions:
 - Expand mechanisms, processes, causes, and relationships thoroughly.
 - Use clear academic language suitable for university-level learning.
 - Avoid short answers.
+- Focus on understanding, not repetition.
 
 Textbook Context:
 ${context}
