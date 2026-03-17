@@ -5,7 +5,6 @@ const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const textract = require("textract");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
