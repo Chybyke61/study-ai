@@ -115,12 +115,15 @@ async function extractText(file) {
     try {
         if (ext === ".pdf") {
     const buffer = fs.readFileSync(file.path);
+            console.log("📄 Parsing PDF...");
+            console.log("Buffer size:", buffer.length);
 
     // 🔹 STEP 1: Try pdf-parse
     let pdfText = "";
     try {
         const data = await pdfParse(buffer);
         pdfText = data.text;
+        console.log("Extracted preview:", pdfText?.slice(0, 100));
     } catch (err) {
         console.warn("pdf-parse failed");
     }
@@ -136,7 +139,15 @@ async function extractText(file) {
     // 🔹 STEP 2: Try textract
     let textractText = "";
     try {
-        textractText = await textract.fromFileWithPath(file.path);
+        textractText = await new Promise((resolve) => {
+    textract.fromFileWithPath(file.path, (err, text) => {
+        if (err) {
+            console.error("Textract error:", err);
+            return resolve("");
+        }
+        resolve(text);
+    });
+});
     } catch (err) {
         console.warn("textract failed");
     }
@@ -375,16 +386,25 @@ app.post("/upload", async (req, res) => {
         const response = await r2.send(command);
 
         await new Promise((resolve, reject) => {
-            const writeStream = fs.createWriteStream(tempPath);
-            response.Body.pipe(writeStream);
-            response.Body.on("error", (err) => { writeStream.close(); reject(err); });
-            writeStream.on("finish", resolve);
-        });
+           const writeStream = fs.createWriteStream(tempPath);
 
+           response.Body.on("error", reject);
+           writeStream.on("error", reject);
+
+           writeStream.on("finish", () => {
+           console.log("✅ File fully downloaded");
+           resolve();
+    });
+
+          response.Body.pipe(writeStream);
+ });
+        const stats = fs.statSync(tempPath);
+         console.log("📦 File size:", stats.size);
+        
         // 2. Extract Text
         console.log("STEP 1: Starting upload");
         const text = await extractText({ path: tempPath });
-        console.log("STEP 2: Extracted text length:", text?.length);
+        console.log("STEP 2: Extracted text length:", text ? text.length : 0);
 
         // CRITICAL: Stop if extraction failed
         if (!text || text.trim().length < 50) {
