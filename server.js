@@ -14,6 +14,7 @@ const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/clien
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
+const mammoth = require("mammoth");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -111,58 +112,52 @@ function isLikelyScanned(text) {
 
 async function extractText(file) {
     const ext = path.extname(file.path).toLowerCase();
-    
     try {
+        // ✅ PDF
         if (ext === ".pdf") {
-    const buffer = fs.readFileSync(file.path);
-            console.log("📄 Parsing PDF...");
-            console.log("Buffer size:", buffer.length);
+        console.log("📄 Parsing PDF...");
 
-    // 🔹 STEP 1: Try pdf-parse
-    let pdfText = "";
-    try {
+        const buffer = fs.readFileSync(file.path);
         const data = await pdfParse(buffer);
-        console.log("RAW PDF TEXT SAMPLE:", data.text.slice(0, 200));
-        pdfText = data.text;
-        console.log("Extracted preview:", pdfText?.slice(0, 100));
-    } catch (err) {
-        console.warn("pdf-parse failed");
-    }
 
-    // 🔥 SMART DECISION
-    if (isGoodText(pdfText) && !isLikelyScanned(pdfText)) {
-        console.log("✅ Using pdf-parse (clean text)");
-        return pdfText;
-    }
+        const text = data.text || "";
 
-    console.warn("⚠️ PDF looks scanned, trying textract...");
+        console.log("PDF text length:", text.length);
+        console.log("Preview:", text.slice(0, 100));
 
-    // 🔹 STEP 2: Try textract
-    let textractText = "";
-    try {
-        textractText = await new Promise((resolve) => {
-    textract.fromFileWithPath(file.path, (err, text) => {
-        if (err) {
-            console.error("Textract error:", err);
-            return resolve("");
+        // 🔥 ACCEPT ANY REAL TEXT
+        if (text.trim().length > 20) {
+            console.log("✅ PDF parsed successfully");
+            return text;
         }
-        resolve(text);
-    });
-});
-    } catch (err) {
-        console.warn("textract failed");
-    }
 
-    if (isGoodText(textractText)) {
-        console.log("✅ Using textract");
-        return textractText;
-    }
+        console.warn("⚠️ PDF has very little text");
+        return "";
 
-    console.warn("⚠️ Could not extract readable text from PDF.");
-    return "";
-}
+    } 
+        
+ // ======================
+// ✅ DOCX FIX (PASTE HERE)
+// ======================
+        else if (ext === ".docx") {
+           console.log("📄 Reading DOCX with mammoth...");
+
+           const result = await mammoth.extractRawText({
+                path: file.path
+          });
+
+           console.log("DOCX text length:", result.value.length);
+
+           if (result.value && result.value.trim().length > 50) {
+           console.log("✅ DOCX parsed");
+           return result.value;
+        }
+
+        console.warn("⚠️ DOCX empty");
+        return "";
+        }
     } catch (err) {
-        console.error("OCR failed:", err);
+        console.error("❌ Extraction failed:", err);
         return "";
     }
 }
