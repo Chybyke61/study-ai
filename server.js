@@ -295,7 +295,7 @@ async function rebuildIndexesFromSupabase() {
 
 async function rerankChunks(query, chunks) {
     try {
-        const limitedChunks = chunks.slice(0, 8); // 🔥 limit for free tier
+        const limitedChunks = chunks.slice(0, 5); // 🔥 limit for free tier
 
         const prompt = `
 Select the 5 most relevant chunks for the query.
@@ -414,7 +414,11 @@ app.post("/upload", async (req, res) => {
 
         // 3. Chunking
         const parentChunks = recursiveChunk(text, 1500, 200);
-        const childChunks = recursiveChunk(text, 400, 50);
+        const childChunks = recursiveChunk(text, 700, 100);
+
+        // 🚀 LIMIT chunks (IMPORTANT)
+        const MAX_CHUNKS = 20;
+        const limitedChunks = childChunks.slice(0, MAX_CHUNKS);
         console.log("STEP 3: Chunks created:", childChunks.length);
 
         if (!documentStore[userId]) documentStore[userId] = {};
@@ -424,14 +428,14 @@ app.post("/upload", async (req, res) => {
         console.log("STEP 4: Starting embedding...");
 
         // Save chunks to Supabase so they survive redeploy
-console.log(`⚡️ Embedding ${childChunks.length} chunks...`);
+console.log(`⚡️ Embedding ${limitedChunks.length} chunks...`);
 
 const batchSize = 20;
 const insertBatch = [];
 
-for (let i = 0; i < childChunks.length; i += batchSize) {
+for (let i = 0; i < limitedChunks.length; i += batchSize) {
 
-    const batch = childChunks.slice(i, i + batchSize);
+    const batch = limitedChunks.slice(i, i + batchSize);
 
     const vectors = await Promise.all(
         batch.map(chunk => embedText(chunk))
@@ -511,7 +515,7 @@ app.post("/deep-explain", async (req, res) => {
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
             match_threshold: 0,
-            match_count: 8,
+            match_count: 5,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
         });
@@ -596,7 +600,7 @@ Provide a structured explanation using headings and detailed paragraphs.
         const chat = await groq.chat.completions.create({
             messages: [{ role:"user", content:prompt }],
             model: "llama-3.1-8b-instant",
-            temperature: 0.4,
+            temperature: 0.2,
             max_tokens: 1500
         });
 
