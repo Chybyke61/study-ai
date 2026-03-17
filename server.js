@@ -121,8 +121,15 @@ if (textractText && textractText.trim().length > 50) {
 }
 
 // Attempt 3: OCR (FINAL fallback)
-console.warn("🧠 Running OCR fallback...");
+console.warn("🧠 Running fast partial OCR...");
 const ocrText = await runOCR(file.path);
+const stats = fs.statSync(file.path);
+
+// Skip OCR if file is too large (prevents slow server)
+if (stats.size > 5 * 1024 * 1024) {
+    console.warn("⚠️ File too large for OCR, skipping...");
+    return "";
+}
 
 return ocrText || "";
 
@@ -134,12 +141,23 @@ return ocrText || "";
 
 async function runOCR(filePath) {
     try {
+        // Only allow PDF OCR
+        if (path.extname(filePath).toLowerCase() !== ".pdf") {
+            return "";
+        }
+        console.log("🧠 Running fast partial OCR...");
+
         const { data: { text } } = await Tesseract.recognize(
             filePath,
-            "eng"
+            "eng",
+            {
+                tessedit_pageseg_mode: "1", // faster layout detection
+                tessedit_ocr_engine_mode: "1" // faster engine
+            }
         );
 
         return text;
+
     } catch (err) {
         console.error("OCR failed:", err);
         return "";
