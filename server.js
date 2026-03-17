@@ -86,52 +86,87 @@ function saveCache() {
 
 // --- HELPER FUNCTIONS ---
 
+function isGoodText(text) {
+    if (!text) return false;
+
+    const clean = text.trim();
+
+    return (
+        clean.length > 100 &&
+        /[a-zA-Z]/.test(clean) && // has letters
+        clean.split(" ").length > 20 // enough words
+    );
+}
+
+function isLikelyScanned(text) {
+    if (!text) return true;
+
+    const clean = text.trim();
+
+    // Too short or no real words → likely scanned
+    return (
+        clean.length < 50 ||
+        !/[a-zA-Z]{3,}/.test(clean)
+    );
+}
+
 async function extractText(file) {
     const ext = path.extname(file.path).toLowerCase();
     
     try {
         if (ext === ".pdf") {
-            const buffer = fs.readFileSync(file.path);
-            
-            // Attempt 1: pdf-parse
-            try {
-                const data = await pdfParse(buffer);
-                if (data && data.text && data.text.trim().length > 10) {
-                    return data.text;
-                }
-            } catch (pdfErr) {
-                console.warn(`⚠️ pdf-parse range error on ${path.basename(file.path)}. Switching to fallback...`);
-            }
-        }
+    const buffer = fs.readFileSync(file.path);
 
-       // Attempt 2: Textract
-const textractText = await new Promise((resolve) => {
-    textract.fromFileWithPath(file.path, { preserveLineBreaks: true }, (err, text) => {
-        if (err) {
-            console.warn("⚠️ Textract failed, moving to OCR...");
-            return resolve("");
-        }
-        resolve(text || "");
-    });
-});
+    // 🔹 STEP 1: Try pdf-parse
+    let pdfText = "";
+    try {
+        const data = await pdfParse(buffer);
+        pdfText = data.text;
+    } catch (err) {
+        console.warn("pdf-parse failed");
+    }
 
-// If textract worked, return it
-if (textractText && textractText.trim().length > 50) {
-    return textractText;
+    // 🔥 SMART DECISION
+    if (isGoodText(pdfText) && !isLikelyScanned(pdfText)) {
+        console.log("✅ Using pdf-parse (clean text)");
+        return pdfText;
+    }
+
+    console.warn("⚠️ PDF looks scanned, trying textract...");
+
+    // 🔹 STEP 2: Try textract
+    let textractText = "";
+    try {
+        textractText = await textract.fromFileWithPath(file.path);
+    } catch (err) {
+        console.warn("textract failed");
+    }
+
+    if (isGoodText(textractText)) {
+        console.log("✅ Using textract");
+        return textractText;
+    }
+
+    console.warn("⚠️ Falling back to OCR...");
+
+    // 🔹 STEP 3: OCR (optimized)
+    const stats = fs.statSync(file.path);
+
+    if (stats.size > 5 * 1024 * 1024) {
+        console.warn("⚠️ File too large, skipping OCR");
+        return "";
+    }
+
+    let ocrText = await runOCR(file.path);
+
+    if (!isGoodText(ocrText)) {
+        console.warn("⚠️ Low OCR result, running full OCR...");
+        const { data: { text } } = await Tesseract.recognize(file.path, "eng");
+        ocrText = text;
+    }
+
+    return ocrText;
 }
-
-// Attempt 3: OCR (FINAL fallback)
-console.warn("🧠 Running fast partial OCR...");
-const ocrText = await runOCR(file.path);
-const stats = fs.statSync(file.path);
-
-// Skip OCR if file is too large (prevents slow server)
-if (stats.size > 5 * 1024 * 1024) {
-    console.warn("⚠️ File too large for OCR, skipping...");
-    return "";
-}
-
-return ocrText || "";
 
     } catch (globalErr) {
         console.error("🔥 Critical extraction crash:", globalErr);
@@ -289,6 +324,42 @@ async function rebuildIndexesFromSupabase() {
     }
 
     console.log("AI indexes rebuilt successfully");
+}
+
+async function rerankChunks(query, chunks) {
+    try {
+        const limitedChunks = chunks.slice(0, 8); // 🔥 limit for free tier
+
+        const prompt = `
+Select the 5 most relevant chunks for the query.
+
+Query:
+${query}
+
+Chunks:
+${limitedChunks.map((c, i) => `[${i}] ${c}`).join("\n\n")}
+
+Return ONLY numbers like: 2,5,1,3,0
+`;
+
+        const response = await groq.chat.completions.create({
+            model: "llama-3.1-8b-instant",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0
+        });
+
+        const text = response.choices[0].message.content;
+
+        const indices = text.match(/\d+/g)?.map(Number) || [];
+
+        return indices
+            .map(i => limitedChunks[i])
+            .filter(Boolean);
+
+    } catch (err) {
+        console.error("Rerank failed:", err);
+        return chunks.slice(0, 5); // fallback
+    }
 }
 
 // --- ROUTES ---
@@ -481,9 +552,20 @@ console.log("Combined results:", combinedContext.length);
   return res.json({ explanation: "No study material found for this topic." });
 }
 
-const context = combinedContext
-.slice(0,8)
-.join("\n\n---\n\n");
+// Extract raw chunks
+const rawChunks = results.map(r => r.text);
+
+// 🔥 Smart rerank (only when needed)
+let bestChunks;
+
+if (rawChunks.length > 5) {
+    bestChunks = await rerankChunks(topic, rawChunks);
+} else {
+    bestChunks = rawChunks;
+}
+
+// Build final context
+const context = bestChunks.join("\n\n---\n\n");
     
 
  const prompt = `
@@ -562,10 +644,21 @@ app.post("/notes", async (req, res) => {
 
         results.sort((a,b)=>b.score-a.score);
 
-        const context = results
-            .slice(0,5)
-            .map(r=>r.text)
-            .join("\n\n");
+        // Extract raw chunks
+        const rawChunks = results.map(r => r.text);
+
+        // 🔥 Smart rerank
+        let bestChunks;
+
+        if (rawChunks.length > 5) {
+            bestChunks = await rerankChunks(topic, rawChunks);
+    } else {
+            bestChunks = rawChunks;
+    }
+
+    // Build context
+    const context = bestChunks.join("\n\n---\n\n");
+
 
         const prompt = `
 Create **detailed university-level study notes**.
@@ -637,10 +730,20 @@ The notes must be detailed and structured for studying.
 
         results.sort((a,b)=>b.score-a.score);
 
-        const context = results
-            .slice(0,5)
-            .map(r=>r.text)
-            .join("\n\n");
+        // Extract raw chunks
+        const rawChunks = results.map(r => r.text);
+
+        // 🔥 Smart rerank
+        let bestChunks;
+
+        if (rawChunks.length > 5) {
+        bestChunks = await rerankChunks(topic, rawChunks);
+    } else {
+        bestChunks = rawChunks;
+}
+
+        // Build context
+        const context = bestChunks.join("\n\n---\n\n");
 
         const prompt = `
 Create a **difficult university-level quiz**.
@@ -710,9 +813,23 @@ app.post("/chat", async (req, res) => {
         }
 
         allResults.sort((a, b) => b.score - a.score);
-        const topMatches = allResults.slice(0, 5).map(r => r.text).join("\n\n---\n\n");
 
-        const prompt = `You are a helpful study assistant. Use the textbook excerpts to answer the question.\n\nContext:\n${topMatches}\n\nQuestion: ${query}`;
+        // Extract raw chunks
+        const rawChunks = allResults.map(r => r.text);
+
+        // 🔥 Smart rerank (only if needed)
+            let bestChunks;
+
+    if (rawChunks.length > 5) {
+    bestChunks = await rerankChunks(query, rawChunks);
+    } else {
+    bestChunks = rawChunks;
+    }
+
+// Build context
+        const context = bestChunks.join("\n\n---\n\n");
+
+        const prompt = `You are a helpful study assistant. Use the textbook excerpts to answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
 
         const chatCompletion = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
