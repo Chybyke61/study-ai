@@ -468,9 +468,9 @@ Provide a structured explanation using headings and detailed paragraphs.
 
         const chat = await groq.chat.completions.create({
             messages: [{ role:"user", content:prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.3,
-            max_tokens: 2000
+            model: "llama-3.1-8b-instant",
+            temperature: 0.4,
+            max_tokens: 1500
         });
 
         res.json({
@@ -545,7 +545,7 @@ The notes must be detailed and structured for studying.
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
-            model:"llama-3.3-70b-versatile"
+            model:"llama-3.1-8b-instant",
         });
 
         res.json({
@@ -627,7 +627,7 @@ Explanation:
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
-            model:"llama-3.3-70b-versatile"
+            model:"llama-3.1-8b-instant",
         });
 
         res.json({
@@ -672,7 +672,7 @@ app.post("/chat", async (req, res) => {
 
         const chatCompletion = await groq.chat.completions.create({
             messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
+            model: "llama-3.1-8b-instant",
             temperature: 0.5,
         });
 
