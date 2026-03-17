@@ -382,7 +382,9 @@ app.post("/upload", async (req, res) => {
         });
 
         // 2. Extract Text
+        console.log("STEP 1: Starting upload");
         const text = await extractText({ path: tempPath });
+        console.log("STEP 2: Extracted text length:", text?.length);
 
         // CRITICAL: Stop if extraction failed
         if (!text || text.trim().length < 50) {
@@ -393,9 +395,13 @@ app.post("/upload", async (req, res) => {
         // 3. Chunking
         const parentChunks = recursiveChunk(text, 1500, 200);
         const childChunks = recursiveChunk(text, 400, 50);
+        console.log("STEP 3: Chunks created:", childChunks.length);
 
         if (!documentStore[userId]) documentStore[userId] = {};
         documentStore[userId][filename] = { parentChunks, childChunks };
+     
+
+        console.log("STEP 4: Starting embedding...");
 
         // Save chunks to Supabase so they survive redeploy
 console.log(`⚡️ Embedding ${childChunks.length} chunks...`);
