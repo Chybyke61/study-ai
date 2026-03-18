@@ -534,6 +534,31 @@ function buildSmartContext(chunks, maxChars = 2500) {
   return context.trim();
 }
 
+function reciprocalRankFusion(vectorResults, keywordResults, k = 60) {
+  const scores = new Map();
+
+  function add(results) {
+    results.forEach((item, index) => {
+      const key = item.text;
+
+      const rankScore = 1 / (k + index);
+
+      if (!scores.has(key)) {
+        scores.set(key, { text: item.text, score: 0 });
+      }
+
+      scores.get(key).score += rankScore;
+    });
+  }
+
+  add(vectorResults);
+  add(keywordResults);
+
+  return Array.from(scores.values())
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.text);
+}
+
 app.post("/deep-explain", async (req, res) => {
     try {
         const { topic, level = "University", book = "all" } = req.body;
@@ -591,9 +616,23 @@ if (keywordIndices[userId] && keywordIndices[userId][book]) {
 }
 
 const vectorContext = data ? data.map(row => row.content) : [];
-const keywordContext = keywordResults.map(r => r.text);
+      
+const vectorFormatted = vectorContext.map(text => ({ text }));
 
-const combinedContext = [...vectorContext, ...keywordContext];
+const keywordFormatted = keywordResults.map(r => ({
+  text: r.text
+}));
+let combinedContext;
+
+if (keywordFormatted.length > 0) {
+  combinedContext = reciprocalRankFusion(
+    vectorFormatted,
+    keywordFormatted
+  );
+} else {
+  combinedContext = vectorContext;
+}
+
 
         console.log("Vector search results:", data);
         console.log("Vector results:", vectorContext.length);
@@ -622,34 +661,44 @@ if (rawChunks.length > 8) {
 
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-const context = buildSmartContext(bestChunks, 2500);
-    
+const context = buildSmartContext(bestChunks, 2200);
 
- const prompt = `
-You are an expert academic tutor.
+        const prompt = `
+You are an expert academic tutor for all subjects (science, medicine, engineering, humanities, business, etc.).
 
-Instructions:
-- Do NOT greet the user.
-- Do NOT say "Welcome", "Hello", or address the student directly.
-- Start immediately with the explanation of the topic.
-- Do NOT include a "Definition" section.
-- Organize the explanation using clear headings.
-- Each heading should explain an important concept related to the topic.
-- Write detailed explanations so the student can understand the topic without reading the textbook.
-- Expand mechanisms, processes, causes, and relationships thoroughly.
-- Use clear academic language suitable for university-level learning.
-- Avoid short answers.
-- Focus on understanding, not repetition.
+STRICT RULES:
+- You MUST use ONLY the provided textbook context
+- You are NOT allowed to use outside knowledge
+- If the answer is not clearly contained in the context, respond exactly with:
+  "This is not found in the provided material"
+- Do NOT guess, infer beyond the text, or hallucinate
 
-Textbook Context:
+INSTRUCTIONS:
+- Do NOT greet the user
+- Do NOT say "Welcome", "Hello", or address the student directly
+- Start immediately with the explanation
+- Do NOT include a "Definition" section
+- Organize the explanation using clear headings
+- Each heading must explain a key concept
+- Provide deep, detailed explanations under each heading
+- Explain mechanisms, processes, and relationships clearly
+- Only include examples if they are supported by the context
+- Ensure the explanation is understandable without needing the original textbook
+- Use clear academic language suitable for university-level learning
+- Avoid repetition and vague statements
+
+---------------------
+TEXTBOOK CONTEXT:
 ${context}
+---------------------
 
-Topic:
+TOPIC:
 ${topic}
 
-Provide a structured explanation using headings and detailed paragraphs.
+TASK:
+Provide a structured, detailed explanation using headings and well-developed paragraphs strictly based on the context.
 `;
-
+    
         const chat = await groq.chat.completions.create({
             messages: [{ role:"user", content:prompt }],
             model: "llama-3.1-8b-instant",
@@ -666,9 +715,10 @@ Provide a structured explanation using headings and detailed paragraphs.
             level,
             book,
             type: "explain",
-            response: output
-        });
+            response: output 
 
+        });
+     
         res.json({ explanation: output });
 
     } catch(err) {
@@ -728,8 +778,47 @@ app.post("/notes", async (req, res) => {
 
         results.sort((a,b)=>b.score-a.score);
 
+        let keywordResults = [];
+
+if (keywordIndices[userId] && keywordIndices[userId][book]) {
+  const tfidf = keywordIndices[userId][book];
+
+  tfidf.tfidfs(topic, function(i, measure) {
+  const chunk = documentStore[userId]?.[book]?.childChunks?.[i];
+
+  if (chunk && typeof chunk === "string") {
+    keywordResults.push({
+      score: measure,
+      text: chunk
+    });
+  }
+});
+
+  keywordResults.sort((a,b)=>b.score-a.score);
+  keywordResults = keywordResults.slice(0, 3);
+}
+
         // Extract raw chunks
-        const rawChunks = results.map(r => r.text);
+        const vectorContext = results.map(r => r.text);
+
+const vectorFormatted = vectorContext.map(text => ({ text }));
+
+const keywordFormatted = keywordResults.map(r => ({
+  text: r.text
+}));
+
+let combinedContext;
+
+if (keywordFormatted.length > 0) {
+  combinedContext = reciprocalRankFusion(
+    vectorFormatted,
+    keywordFormatted
+  );
+} else {
+  combinedContext = vectorContext;
+}
+
+const rawChunks = combinedContext;
 
         // 🔥 Smart rerank
         let bestChunks;
@@ -741,32 +830,62 @@ app.post("/notes", async (req, res) => {
     }
 
     // Build context
-    const context = buildSmartContext(bestChunks, 2500);
-
+    const context = buildSmartContext(bestChunks, 2200);
 
         const prompt = `
-Create **detailed university-level study notes**.
+You are an expert academic tutor creating high-quality study notes for any subject.
 
-Topic: ${topic}
+STRICT RULES:
+- You MUST use ONLY the provided textbook context
+- You are NOT allowed to use outside knowledge
+- If the topic is not clearly covered in the context, respond exactly with:
+  "This is not found in the provided material"
+- Do NOT guess or hallucinate
 
-Textbook Context:
+INSTRUCTIONS:
+- Do NOT greet the user
+- Do NOT say "Welcome" or "Hello"
+- Write clear, well-structured study notes
+- Use concise but detailed explanations
+- Avoid repetition and filler text
+- Ensure notes are easy to revise and memorize
+- Use bullet points where appropriate
+
+---------------------
+TEXTBOOK CONTEXT:
 ${context}
+---------------------
 
-Structure the notes like this:
+TOPIC:
+${topic}
+
+STRUCTURE:
 
 # Topic Overview
-# Key Definitions
-# Important Concepts
-# Mechanisms or Processes
-# Bullet Point Summary
-# Exam Tips
+- Provide a clear explanation of the topic based strictly on the context
 
-The notes must be detailed and structured for studying.
+# Key Concepts
+- List and explain the most important ideas from the context
+
+# Mechanisms / Processes
+- Explain step-by-step processes or how things work (if applicable)
+
+# Key Points Summary
+- Provide concise bullet points for quick revision
+
+# Exam Tips
+- Highlight likely exam areas based ONLY on the context
+
+TASK:
+Create detailed, structured study notes strictly based on the provided context.
 `;
+
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
             model:"llama-3.1-8b-instant",
+            temperature: 0.2,
+            max_tokens: 1500
         });
 
         const output = chat.choices[0].message.content;
@@ -841,8 +960,47 @@ The notes must be detailed and structured for studying.
 
         results.sort((a,b)=>b.score-a.score);
 
+        let keywordResults = [];
+
+if (keywordIndices[userId] && keywordIndices[userId][book]) {
+  const tfidf = keywordIndices[userId][book];
+
+  tfidf.tfidfs(topic, function(i, measure) {
+    const chunk = documentStore[userId]?.[book]?.childChunks?.[i];
+
+    if (chunk && typeof chunk === "string") {
+      keywordResults.push({
+        score: measure,
+        text: chunk
+      });
+    }
+  });
+
+  keywordResults.sort((a,b)=>b.score-a.score);
+  keywordResults = keywordResults.slice(0, 3);
+}
+
         // Extract raw chunks
-        const rawChunks = results.map(r => r.text);
+        const vectorContext = results.map(r => r.text);
+
+const vectorFormatted = vectorContext.map(text => ({ text }));
+
+const keywordFormatted = keywordResults.map(r => ({
+  text: r.text
+}));
+
+let combinedContext;
+
+if (keywordFormatted.length > 0) {
+  combinedContext = reciprocalRankFusion(
+    vectorFormatted,
+    keywordFormatted
+  );
+} else {
+  combinedContext = vectorContext;
+}
+
+const rawChunks = combinedContext;
 
         // 🔥 Smart rerank
         let bestChunks;
@@ -854,24 +1012,43 @@ The notes must be detailed and structured for studying.
 }
 
         // Build context
-        const context = buildSmartContext(bestChunks, 2500);
+        const context = buildSmartContext(bestChunks, 2200);
 
         const prompt = `
-Create a **difficult university-level quiz**.
+You are an expert academic tutor creating a challenging university-level quiz for any subject.
 
-Topic: ${topic}
+STRICT RULES:
+- You MUST use ONLY the provided textbook context
+- You are NOT allowed to use outside knowledge
+- Every question MUST be directly based on the context
+- If there is not enough information to create the quiz, respond exactly with:
+  "This is not found in the provided material"
+- Do NOT guess or hallucinate
 
-Textbook Context:
+INSTRUCTIONS:
+- Do NOT greet the user
+- Do NOT include any introductory text
+- Make the questions challenging (application, reasoning, not just recall)
+- Avoid repeating the same concept
+- Ensure options are realistic and not obvious
+- Keep explanations clear and directly tied to the context
+
+---------------------
+TEXTBOOK CONTEXT:
 ${context}
+---------------------
 
-Requirements:
+TOPIC:
+${topic}
 
-• 5 multiple choice questions  
-• Each question must have 4 options  
-• Show the correct answer  
-• Provide a short explanation  
+REQUIREMENTS:
+- Generate EXACTLY 10 multiple choice questions
+- Each question must have 4 options (A–D)
+- Only ONE correct answer per question
+- Provide the correct answer
+- Provide a short explanation based ONLY on the context
 
-Format:
+FORMAT:
 
 Question 1  
 A)  
@@ -880,14 +1057,18 @@ C)
 D)  
 
 Correct Answer:  
-Explanation:
+Explanation:  
+
+(Repeat for all 10 questions)
 `;
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
             model:"llama-3.1-8b-instant",
+            temperature: 0.2,
+            max_tokens: 1500
         });
-
+            
         const output = chat.choices[0].message.content;
 
         // 💾 SAVE TO CACHE
