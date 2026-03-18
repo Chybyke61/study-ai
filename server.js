@@ -2,1327 +2,402 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const EventEmitter = require("events");
-const progressEvents = new EventEmitter();
-const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
-const { createClient } = require('@supabase/supabase-js');
+const { createClient } = require("@supabase/supabase-js");
 const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-const { pipeline, max } = require("@xenova/transformers");
-const e = require("express");
+const { pipeline } = require("@xenova/transformers");
 const mammoth = require("mammoth");
-const { type } = require("os");
+const EventEmitter = require("events");
 
-// --- INITIALIZATION ---
+const app = express();
+const progressEvents = new EventEmitter();
+
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+
+// --- INIT ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 const r2 = new S3Client({
-    region: "auto",
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-    }
+  region: "auto",
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
 });
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const app = express();
 
-app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"], allowedHeaders: ["Content-Type", "x-user-id"] }));
-app.use(express.json({ limit: "500mb" }));
-app.use(express.urlencoded({ extended: true, limit: "500mb" }));
-
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-
-const CACHE_FILE = path.join(__dirname, "rag_cache.json");
-
-// --- IN-MEMORY STATE ---
-let documentStore = {};
-let keywordIndices = {};
-let vectorIndices = {};
 let embedder;
 
-// Load state from disk
-if (fs.existsSync(CACHE_FILE)) {
-    try {
-        const data = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
-        documentStore = data.documentStore || {};
-        keywordIndices = data.keywordIndices || {};
-        vectorIndices = data.vectorIndices || {};
-        console.log("✅ Cache loaded.");
-    } catch (err) {
-        console.error("❌ Cache read error:", err);
-    }
-}
-
-function saveCache() {
-    setImmediate(() => {
-        try {
-            fs.writeFileSync(CACHE_FILE, JSON.stringify({ documentStore, keywordIndices, vectorIndices }));
-            console.log("💾 Cache auto-saved.");
-        } catch (err) {
-            console.error("Cache save failed", err);
-        }
-    });
-}
-
-// --- LOAD LOCAL EMBEDDING MODEL ---
-(async function initLocalModel() {
-    console.log("Loading local embedding model...");
-    try {
-        // Quantized ensures minimal RAM usage for broad device compatibility
-        embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
-            quantized: true 
-        });
-        console.log("✅ Local embedding model ready.");
-    } catch (err) {
-        console.error("❌ Failed to load local model:", err);
-    }
+// --- LOAD MODEL ---
+(async () => {
+  console.log("Loading embedding model...");
+  embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+    quantized: true,
+  });
+  console.log("✅ Model ready");
 })();
 
-// --- HELPER FUNCTIONS ---
-
-function isGoodText(text) {
-    if (!text) return false;
-
-    const clean = text.trim();
-
-    return (
-        clean.length > 100 &&
-        /[a-zA-Z]/.test(clean) && // has letters
-        clean.split(" ").length > 20 // enough words
-    );
-}
-
-function isLikelyScanned(text) {
-    if (!text) return true;
-
-    const clean = text.trim();
-
-    // Too short or no real words → likely scanned
-    return (
-        clean.length < 50 ||
-        !/[a-zA-Z]{3,}/.test(clean)
-    );
-}
-
-async function extractText(file) {
-    const ext = path.extname(file.path).toLowerCase();
-    try {
-        // ✅ PDF
-        if (ext === ".pdf") {
-        console.log("📄 Parsing PDF...");
-
-        const buffer = fs.readFileSync(file.path);
-        const data = await pdfParse(buffer);
-
-        const text = data.text || "";
-
-        console.log("PDF text length:", text.length);
-        console.log("Preview:", text.slice(0, 100));
-
-        // 🔥 ACCEPT ANY REAL TEXT
-        if (text.trim().length > 20) {
-            console.log("✅ PDF parsed successfully");
-            return text;
-        }
-
-        console.warn("⚠️ PDF has very little text");
-        return "";
-
-    } 
-        
- // ======================
-// ✅ DOCX FIX (PASTE HERE)
-// ======================
-        if (ext === ".docx") {
-           console.log("📄 Reading DOCX with mammoth...");
-
-           const result = await mammoth.extractRawText({
-                path: file.path
-          });
-
-           console.log("DOCX text length:", result.value.length);
-
-           if (result.value && result.value.trim().length > 50) {
-           console.log("✅ DOCX parsed");
-           return result.value;
-        }
-
-        console.warn("⚠️ DOCX empty");
-        return "";
-        }
-    } catch (err) {
-        console.error("❌ Extraction failed:", err);
-        return "";
-    }
-}
-
-function recursiveChunk(text, chunkSize = 1000, overlap = 200) {
-    const words = text.split(/\s+/);
-    const chunks = [];
-    for (let i = 0; i < words.length; i += (chunkSize - overlap)) {
-        chunks.push(words.slice(i, i + chunkSize).join(" "));
-    }
-    return chunks;
-}
+// --- HELPERS ---
 
 async function embedText(text) {
-    if (!embedder) {
-        console.warn("Embedder is still loading, returning zero-vector.");
-        return new Array(384).fill(0);
-    }
-
-    try {
-        const result = await embedder(text, { pooling: "mean", normalize: true });
-        return Array.from(result.data);
-    } catch (err) {
-        console.error("Local Embedding Error:", err);
-        return new Array(384).fill(0);
-    }
+  const safe = text.slice(0, 2000); // ✅ GOOD EMBEDDING
+  const result = await embedder(safe, { pooling: "mean", normalize: true });
+  return Array.from(result.data);
 }
 
-async function addToIndex(userId, filename, children) {
-    if (!keywordIndices[userId]) keywordIndices[userId] = {};
-    if (!vectorIndices[userId]) vectorIndices[userId] = {};
+function chunkText(text, size = 700, overlap = 100) {
+  const words = text.split(/\s+/);
+  let chunks = [];
 
-    const MAX_CHUNKS = 100;
-children = children.slice(0, MAX_CHUNKS);
+  for (let i = 0; i < words.length; i += size - overlap) {
+    chunks.push(words.slice(i, i + size).join(" "));
+  }
 
-    const tfidf = new natural.TfIdf();
-    const vectors = [];
-    
-    // Strict batch size prevents buffer overflow on constrained hardware
-    const batchSize = 50; 
-
-    children.forEach(chunk => {
-    if (!chunk || typeof chunk !== "string") return;
-    tfidf.addDocument(chunk.toLowerCase());
-});
-
-    for (let i = 0; i < children.length; i += batchSize) {
-        try {
-            const batch = children
-                .slice(i, i + batchSize)
-                .filter(t => typeof t === "string" && t.trim().length > 20);
-
-            const batchVectors = await Promise.all(
-                batch
-                    .filter(t => typeof t === "string" && t.trim().length > 20)
-                    .map(async text => ({
-                        text,
-                        vector: await embedText(text.toLowerCase())
-                    }))
-            );
-
-            vectors.push(...batchVectors);
-            console.log(`[${filename}] Indexed ${vectors.length}/${children.length} chunks locally...`);
-
-        } catch (err) {
-            console.error(`Batch starting at ${i} failed for ${filename}`, err);
-        }
-    }
-
-    keywordIndices[userId][filename] = tfidf;
-    vectorIndices[userId][filename] = vectors;
-    saveCache();
+  return chunks.slice(0, 200); // ✅ BALANCED LIMIT
 }
 
-function cosineSimilarity(vecA, vecB) {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < vecA.length; i++) {
-        dotProduct += vecA[i] * vecB[i];
-        normA += vecA[i] * vecA[i];
-        normB += vecB[i] * vecB[i];
-    }
-    if (normA === 0 || normB === 0) return 0;
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-/* ADD STEP 3 HERE */
-
-async function rebuildIndexesFromSupabase() {
-
-    console.log("Rebuilding AI indexes from Supabase...");
-
-    const { data, error } = await supabase
-        .from("book_chunks")
-        .select("*");
-
-    if (error) {
-        console.error("Failed to load chunks:", error);
-        return;
-    }
-
-    for (const row of data) {
-
-        const userId = row.user_id;
-        const book = row.filename;
-        const text = row.content;
-
-        if (!userId || !book || !text) continue;
-
-        if (!documentStore[userId]) documentStore[userId] = {};
-        if (!documentStore[userId][book]) {
-            documentStore[userId][book] = { childChunks: [] };
-        }
-
-        documentStore[userId][book].childChunks.push(text);
-    }
-
-    console.log("Chunks loaded from Supabase");
-
-    for (const userId in documentStore) {
-        for (const book in documentStore[userId]) {
-
-            const chunks = documentStore[userId][book].childChunks;
-
-            await addToIndex(userId, book, chunks);
-
-            console.log("Index rebuilt for", book);
-        }
-    }
-
-    console.log("AI indexes rebuilt successfully");
-}
-
-async function rerankChunks(query, chunks) {
-    try {
-        const limitedChunks = chunks.slice(0, 5); // 🔥 limit for free tier
-
-        const prompt = `
-Select the 5 most relevant chunks for the query.
-
-Query:
-${query}
-
-Chunks:
-${limitedChunks.map((c, i) => `[${i}] ${c}`).join("\n\n")}
-
-Return ONLY numbers like: 2,5,1,3,0
-`;
-
-        const response = await groq.chat.completions.create({
-            model: "llama-3.1-8b-instant",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0
-        });
-
-        const text = response.choices[0].message.content;
-
-        const indices = text.match(/\d+/g)?.map(Number) || [];
-
-        return indices
-            .map(i => limitedChunks[i])
-            .filter(Boolean);
-
-    } catch (err) {
-        console.error("Rerank failed:", err);
-        return chunks.slice(0, 5); // fallback
-    }
-}
-
-// --- ROUTES ---
-
-app.post("/generate-upload-url", async (req, res) => {
-    try {
-        const userId = req.headers["x-user-id"];
-        const { filename } = req.body;
-
-        if (!userId || !filename) {
-            return res.status(400).json({ error: "Missing filename or user." });
-        }
-
-        const key = `${userId}/${Date.now()}_${filename}`;
-
-        const command = new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET,
-            Key: key,
-            ContentType: "application/octet-stream"
-        });
-
-        const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 600 });
-
-        res.json({
-            uploadUrl,
-            fileKey: key
-        });
-
-    } catch (err) {
-        console.error("Signed URL generation failed:", err);
-        res.status(500).json({ error: "Could not generate upload URL." });
-    }
-});
-
-app.post("/upload", async (req, res) => {
-    let tempPath = null;
-    try {
-        console.log("UPLOAD ROUTE HIT");
-        const userId = req.headers["x-user-id"];
-        const { fileKey, filename } = req.body;
-
-        console.log("User:", userId);
-        console.log("File Key:", fileKey);
-        console.log("Filename:", filename);
-
-        if (!userId || !fileKey || !filename) {
-            return res.status(400).json({ error: "Missing upload data." });
-        }
-
-        tempPath = path.join(UPLOAD_DIR, Date.now() + "-" + filename);
-
-        // 1. Stream from R2
-        const command = new GetObjectCommand({
-            Bucket: process.env.R2_BUCKET,
-            Key: fileKey
-        });
-        const response = await r2.send(command);
-
-        await new Promise((resolve, reject) => {
-           const writeStream = fs.createWriteStream(tempPath);
-
-           response.Body.on("error", reject);
-           writeStream.on("error", reject);
-
-           writeStream.on("finish", () => {
-           console.log("✅ File fully downloaded");
-           resolve();
-
-        progressEvents.emit("update", { step: "Uploading...", progress: 10 });
-    });
-
-          response.Body.pipe(writeStream);
- });
-        const stats = fs.statSync(tempPath);
-         console.log("📦 File size:", stats.size);
-        
-        // 2. Extract Text
-        console.log("STEP 1: Starting upload");
-        const text = await extractText({ path: tempPath });
-        progressEvents.emit("update", { step: "Extracting...", progress: 30 });
-        console.log("STEP 2: Extracted text length:", text ? text.length : 0);
-
-        // CRITICAL: Stop if extraction failed
-        if (!text || text.trim().length < 50) {
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            return res.status(422).json({ error: "Could not extract study material from this file." });
-        }
-
-        // 3. Chunking
-        const parentChunks = recursiveChunk(text, 1500, 200);
-        const childChunks = recursiveChunk(text, 700, 100);
-        progressEvents.emit("update", { step: "Chunking...", progress: 50 });
-
-        // 🚀 LIMIT chunks (IMPORTANT)
-        const MAX_CHUNKS = 100;
-        const limitedChunks = childChunks.slice(0, MAX_CHUNKS);
-        console.log("STEP 3: Chunks created:", childChunks.length);
-
-        if (!documentStore[userId]) documentStore[userId] = {};
-        documentStore[userId][filename] = { parentChunks, childChunks };
-     
-
-        console.log("STEP 4: Starting embedding...");
-
-        // Save chunks to Supabase so they survive redeploy
-console.log(`⚡️ Embedding ${limitedChunks.length} chunks...`);
-
-const batchSize = 50;
-const insertBatch = [];
-
-for (let i = 0; i < limitedChunks.length; i += batchSize) {
-
-    const batch = limitedChunks.slice(i, i + batchSize);
-
-    const vectors = await Promise.all(
-        batch.map(chunk => embedText(chunk))
-    );
-
-    vectors.forEach((vector, idx) => {
-        insertBatch.push({
-            user_id: userId,
-            filename,
-            content: batch[idx],
-            embedding: vector
-        });
-    });
-
-    const progress = 60 + Math.floor(((i + batch.length) / limitedChunks.length) * 30);
-
-    progressEvents.emit("update", {
-    step: "Embedding...",
-    progress
-});
-
-    console.log(`📊 Progress: ${Math.min(i + batch.length, limitedChunks.length)}/${limitedChunks.length}`);
-}
-
-// ONE INSERT (FAST 🚀)
-const { error } = await supabase
-    .from("book_chunks")
-    .insert(insertBatch);
-
-progressEvents.emit("update", { step: "Saving...", progress: 90 });
-
-if (error) {
-    console.error("❌ Supabase batch insert error:", error);
-    throw new Error("Failed saving chunks");
-}
-
-console.log("✅ All chunks saved successfully");
-
-        // 4. Update Database
-        const { error: dbError } = await supabase
-            .from("books")
-            .insert([{ user_id: userId, filename }]);
-
-        if (dbError) throw dbError;
-
-        // 5. Indexing in background (Non-blocking)
-        setImmediate(async () => {
-            try {
-                await addToIndex(userId, filename, childChunks);
-                console.log(`✅ Indexing complete for: ${filename}`);
-            } catch (err) {
-                console.error("Indexing failed in background:", err);
-            } finally {
-                // Safely delete temp file ONLY after extraction is confirmed done
-                if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            }
-        });
-
-        progressEvents.emit("update", { step: "Completed ✅", progress: 100 });
-
-        // 6. Respond immediately to Frontend
-        res.json({ success: true, name: filename });
-
-    } catch (err) {
-        console.error("Upload processing error:", err);
-
-        if (fs.existsSync(tempPath)) {
-            try { fs.unlinkSync(tempPath); } catch {}
-
-        }
-        res.status(500).json({ error: "Upload failed. Please try again." });
-
-}
-});
-
-function buildSmartContext(chunks, maxChars = 2500) {
+function buildContext(chunks, maxChars = 1800) {
   let context = "";
   let used = 0;
 
-  for (const chunk of chunks) {
-    if (!chunk || typeof chunk !== "string") continue;
-
-    const clean = chunk.trim();
-
-    if (used + clean.length > maxChars) break;
-
-    context += clean + "\n\n---\n\n";
-    used += clean.length;
+  for (const c of chunks) {
+    if (!c) continue;
+    if (used + c.length > maxChars) break;
+    context += c + "\n\n---\n\n";
+    used += c.length;
   }
 
   return context.trim();
 }
 
-function reciprocalRankFusion(vectorResults, keywordResults, k = 60) {
-  const scores = new Map();
-
-  function add(results) {
-    results.forEach((item, index) => {
-      const key = item.text;
-
-      const rankScore = 1 / (k + index);
-
-      if (!scores.has(key)) {
-        scores.set(key, { text: item.text, score: 0 });
-      }
-
-      scores.get(key).score += rankScore;
-    });
-  }
-
-  add(vectorResults);
-  add(keywordResults);
-
-  return Array.from(scores.values())
-    .sort((a, b) => b.score - a.score)
-    .map(item => item.text);
-}
-
-function analyzeQuery(topic) {
-  const t = topic.toLowerCase();
-
+function analyzeQuery(q) {
+  q = q.toLowerCase();
   return {
-    isSummary: /summari[sz]e|overview|whole|entire|full/.test(t),
-    isChapter: /chapter\s*\d+/.test(t),
-    isDefinition: /define|what is|meaning of/.test(t),
-    isExplanation: /explain|how|why|discuss/.test(t),
-    isShort: /brief|short|in few words/.test(t)
+    isSummary: /summary|overview/.test(q),
+    isShort: /brief|short/.test(q),
+    isDefinition: /define|what is/.test(q),
   };
 }
 
-app.post("/deep-explain", async (req, res) => {
-    try {
-        const { topic, level = "University", book = "all" } = req.body;
-        const queryType = analyzeQuery(topic);
-        const userId = req.headers["x-user-id"];
+function reciprocalRankFusion(v, k) {
+  const scores = new Map();
 
-        // 🔍 CHECK CACHE FIRST
-        const { data: cached } = await supabase
-            .from("ai_cache")
-            .select("response")
-            .eq("user_id", userId)
-            .eq("topic", topic)
-            .eq("level", level)
-            .eq("book", book)
-            .eq("type", "explain")
-            .limit(1)
-            .single();
-
-        if (cached) {
-            console.log("⚡️ Cache hit");
-            return res.json({ explanation: cached.response });
-        }
-
-        if (!topic) {
-            return res.status(400).json({ error: "Topic required" });
-        }
-
-        const queryVector = await embedText(topic.toLowerCase());
-
-            const { data, error } = await 
-            supabase.rpc("match_book_chunks", {
-            query_embedding: queryVector,
-            match_threshold: 0,
-            match_count: 5,
-            p_user_id: userId,
-            p_filename: book === "all" ? null : book
-        });
-
-        let keywordResults = [];
-
-if (keywordIndices[userId] && keywordIndices[userId][book]) {
-
-  const tfidf = keywordIndices[userId][book];
-
-  tfidf.tfidfs(topic, function(i, measure) {
-    keywordResults.push({
-      score: measure,
-      text: documentStore[userId][book].childChunks[i]
+  function add(list) {
+    list.forEach((item, i) => {
+      const key = item.text;
+      const score = 1 / (60 + i);
+      if (!scores.has(key)) scores.set(key, { text: key, score: 0 });
+      scores.get(key).score += score;
     });
-  });
+  }
 
-  keywordResults.sort((a,b)=>b.score-a.score);
+  add(v);
+  add(k);
 
-  keywordResults = keywordResults.slice(0,3);
-
+  return [...scores.values()]
+    .sort((a, b) => b.score - a.score)
+    .map(x => x.text);
 }
 
-const vectorContext = data ? data.map(row => row.content) : [];
-      
-const vectorFormatted = vectorContext.map(text => ({ text }));
-
-const keywordFormatted = keywordResults.map(r => ({
-  text: r.text
-}));
-let combinedContext;
-
-if (keywordFormatted.length > 0) {
-  combinedContext = reciprocalRankFusion(
-    vectorFormatted,
-    keywordFormatted
-  );
-} else {
-  combinedContext = vectorContext;
-}
-
-
-        console.log("Vector search results:", data);
-        console.log("Vector results:", vectorContext.length);
-        console.log("Hybrid retrieval working:");
-console.log("Keyword results:", keywordResults.length);
-console.log("Combined results:", combinedContext.length);
-
-        if (error) {
-    console.error("Vector search error:", error);
-}
-        if (!data || data.length === 0) {
-  return res.json({ explanation: "No study material found for this topic." });
-}
-
-// Extract raw chunks
-let rawChunks;
-
-if (queryType.isSummary) {
-  console.log("📘 Full summary mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
-
-} else if (queryType.isChapter) {
-  console.log("📘 Chapter mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
-
-} else {
-  console.log("🔍 Semantic search mode");
-  rawChunks = combinedContext;
-}
-
-// 🔥 Smart rerank (only when needed)
-let bestChunks;
-
-if (rawChunks.length > 8) {
-    bestChunks = await rerankChunks(topic, rawChunks);
-} else {
-    bestChunks = rawChunks;
-}
-
-// Build final context
-// 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-let maxChars = 2200;
-
-if (queryType.isSummary) maxChars = 3500;
-if (queryType.isDefinition) maxChars = 1200;
-if (queryType.isShort) maxChars = 1000;
-
-const context = buildSmartContext(bestChunks, maxChars);
-
-        if (!context || context.length < 100) {
-            return res.json({
-                explanation: "No relevant content found in the document."
-  });
-        }
-
-        const prompt = `
-You are an expert academic tutor for all subjects (science, medicine, engineering, humanities, business, etc.).
-
-RULES:
-- Use the textbook context as your MAIN source
-- You MAY clarify and simplify concepts for better understanding
-- You MAY add general knowledge ONLY to explain or connect ideas
-- Do NOT contradict the context
-- Do NOT hallucinate or invent facts not supported by the context
-
-INSTRUCTIONS:
-- Do NOT greet the user
-- Do NOT say "Welcome" or "Hello"
-- Adapt your response based on the request:
-
-${
-  queryType.isDefinition
-    ? "- Start with a clear definition, then provide a short explanation"
-    : queryType.isSummary
-    ? "- Provide a structured summary of the content"
-    : queryType.isShort
-    ? "- Provide a brief and concise explanation"
-    : "- Provide a detailed explanation using clear headings"
-}
-
-- Start immediately with the answer
-- Use clear headings where appropriate
-- Explain concepts, mechanisms, and relationships clearly
-- Use simple but academic language
-- Avoid repetition and vague statements
-- Ensure the explanation is easy to understand
-
----------------------
-TEXTBOOK CONTEXT:
-${context}
----------------------
-
-TOPIC:
-${topic}
-
-TASK:
-Provide a clear, structured explanation based primarily on the context, with additional clarification where necessary for understanding.
-`;
-
-        
-
-        
-    
-        const chat = await groq.chat.completions.create({
-            messages: [{ role:"user", content:prompt }],
-            model: "llama-3.1-8b-instant",
-            temperature: 0.2,
-            max_tokens: 1500
-        });
-
-        const output = chat.choices[0].message.content;
-
-        // 💾 SAVE TO CACHE
-        await supabase.from("ai_cache").insert({
-            user_id: userId,
-            topic,
-            level,
-            book,
-            type: "explain",
-            response: output 
-
-        });
-     
-        res.json({ explanation: output });
-
-    } catch(err) {
-        console.error("Explain error:", err);
-        res.status(500).json({ error:"Explain failed" });
+// --- GROQ RETRY ---
+async function callGroqWithRetry(payload, retries = 3) {
+  try {
+    return await groq.chat.completions.create(payload);
+  } catch (err) {
+    if (err.status === 429 && retries > 0) {
+      console.log("⏳ Rate limited... retrying");
+      await new Promise(r => setTimeout(r, 2000));
+      return callGroqWithRetry(payload, retries - 1);
     }
+    throw err;
+  }
+}
+
+// --- UPLOAD ---
+
+app.post("/generate-upload-url", async (req, res) => {
+  const userId = req.headers["x-user-id"];
+  const { filename } = req.body;
+
+  const key = `${userId}/${Date.now()}_${filename}`;
+  const command = new PutObjectCommand({ Bucket: process.env.R2_BUCKET, Key: key });
+  const uploadUrl = await getSignedUrl(r2, command, { expiresIn: 600 });
+
+  res.json({ uploadUrl, fileKey: key });
 });
-app.post("/notes", async (req, res) => {
-    try {
 
-        const { topic, level, book } = req.body;
-        const queryType = analyzeQuery(topic);
-        const userId = req.headers["x-user-id"];
-        // 🔍 CHECK CACHE FIRST
-        const { data: cached } = await supabase
-            .from("ai_cache")
-            .select("response")
-            .eq("user_id", userId)
-            .eq("topic", topic)
-            .eq("level", level)
-            .eq("book", book)
-            .eq("type", "notes")
-            .limit(1)
-            .single();
+app.post("/upload", async (req, res) => {
+  const { fileKey, filename } = req.body;
+  const userId = req.headers["x-user-id"];
+  const temp = path.join(__dirname, "tmp-" + Date.now());
 
-        if (cached) {
-            console.log("⚡️ Notes cache hit");
-            return res.json({ notes: cached.response });
-        }
+  try {
+    const file = await r2.send(new GetObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: fileKey,
+    }));
 
-        const queryVector = await embedText(topic.toLowerCase());
-
-        let results = [];
-        let booksToSearch = [];
-
-        if (book === "all") {
-            booksToSearch = Object.keys(vectorIndices[userId] || {});
-        } else {
-            booksToSearch = [book];
-        }
-
-        for (const b of booksToSearch) {
-
-            const vectors = vectorIndices[userId]?.[b];
-            const chunks = documentStore[userId]?.[b]?.childChunks;
-
-            if (!vectors || !chunks) continue;
-
-            vectors.forEach((vecObj,i)=>{
-                const score = cosineSimilarity(queryVector, vecObj.vector);
-                results.push({score,text:chunks[i]});
-            });
-        }
-
-        if (results.length === 0) {
-            return res.json({ notes:"No study material found." });
-        }
-
-        results.sort((a,b)=>b.score-a.score);
-
-        let keywordResults = [];
-
-if (keywordIndices[userId] && keywordIndices[userId][book]) {
-  const tfidf = keywordIndices[userId][book];
-
-  tfidf.tfidfs(topic, function(i, measure) {
-  const chunk = documentStore[userId]?.[book]?.childChunks?.[i];
-
-  if (chunk && typeof chunk === "string") {
-    keywordResults.push({
-      score: measure,
-      text: chunk
+    await new Promise((resolve, reject) => {
+      const ws = fs.createWriteStream(temp);
+      file.Body.pipe(ws);
+      ws.on("finish", resolve);
+      ws.on("error", reject);
     });
+
+    progressEvents.emit(userId, { step: "Extracting...", progress: 30 });
+
+    // ✅ MEMORY SAFETY LIMIT
+    const stats = fs.statSync(temp);
+    const MAX_SIZE_MB = 25; // safer than 50
+
+    if (stats.size > MAX_SIZE_MB * 1024 * 1024) {
+      throw new Error("File too large. Max 25MB allowed.");
+    }
+
+    let text = "";
+
+    if (filename.endsWith(".pdf")) {
+      const buffer = fs.readFileSync(temp);
+
+      const data = await pdfParse(buffer, {
+        max: 120
+      });
+
+      text = data.text;
+    }
+
+    if (filename.endsWith(".docx")) {
+      const data = await mammoth.extractRawText({ path: temp });
+      text = data.value;
+    }
+
+    if (!text || text.length < 50) throw new Error("Bad file");
+
+    const chunks = chunkText(text);
+
+    progressEvents.emit(userId, { step: "Embedding...", progress: 50 });
+
+    const batchSize = 20;
+
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+
+      const vectors = await Promise.all(batch.map(embedText));
+
+      const rows = batch.map((c, idx) => ({
+        user_id: userId,
+        filename,
+        content: c,
+        embedding: vectors[idx],
+      }));
+
+      await supabase.from("book_chunks").insert(rows);
+
+      const prog = 50 + Math.floor((i / chunks.length) * 40);
+      progressEvents.emit(userId, { step: "Saving...", progress: prog });
+    }
+
+    await supabase.from("books").insert([{ user_id: userId, filename }]);
+
+    progressEvents.emit(userId, { step: "Completed", progress: 100 });
+
+    res.json({ success: true });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message || "Upload failed" });
+  } finally {
+    if (fs.existsSync(temp)) fs.unlinkSync(temp);
   }
 });
 
-  keywordResults.sort((a,b)=>b.score-a.score);
-  keywordResults = keywordResults.slice(0, 3);
-}
+// --- CONTEXT ---
 
-        // Extract raw chunks
-        const vectorContext = results.map(r => r.text);
+async function getContext(userId, topic, book) {
+  const vec = await embedText(topic);
 
-const vectorFormatted = vectorContext.map(text => ({ text }));
-
-const keywordFormatted = keywordResults.map(r => ({
-  text: r.text
-}));
-
-let combinedContext;
-
-if (keywordFormatted.length > 0) {
-  combinedContext = reciprocalRankFusion(
-    vectorFormatted,
-    keywordFormatted
-  );
-} else {
-  combinedContext = vectorContext;
-}
-
-let rawChunks;
-
-if (queryType.isSummary) {
-  console.log("📘 Full summary mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
-
-} else if (queryType.isChapter) {
-  console.log("📘 Chapter mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
-
-} else {
-  console.log("🔍 Semantic search mode");
-  rawChunks = combinedContext;
-}
-
-        // 🔥 Smart rerank
-        let bestChunks;
-
-        if (rawChunks.length > 8) {
-            bestChunks = await rerankChunks(topic, rawChunks);
-    } else {
-            bestChunks = rawChunks;
-    }
-
-    // Build context
-    let maxChars = 2200;
-
-if (queryType.isSummary) maxChars = 3500;
-if (queryType.isDefinition) maxChars = 1200;
-if (queryType.isShort) maxChars = 1000;
-
-const context = buildSmartContext(bestChunks, maxChars);
-
-        if (!context || context.length < 100) {
-  return res.json({
-    explanation: "No relevant content found in the document."
+  const { data } = await supabase.rpc("match_book_chunks", {
+    query_embedding: vec,
+    match_threshold: 0,
+    match_count: 5,
+    p_user_id: userId,
+    p_filename: book === "all" ? null : book,
   });
-        }
 
-        const prompt = `
-You are an expert academic tutor creating high-quality study notes for any subject.
+  if (!data || data.length === 0) return [];
 
-RULES:
-- Use the textbook context as your MAIN source
-- You MAY simplify and clarify concepts for better understanding
-- Do NOT contradict the context
-- Do NOT hallucinate or invent facts
+  const vector = data.map(d => d.content);
 
-INSTRUCTIONS:
-- Do NOT greet the user
-- Adapt your notes based on the request:
+  const tfidf = new natural.TfIdf();
+  vector.forEach(c => tfidf.addDocument(c));
 
-${
-  queryType.isSummary
-    ? "- Provide a structured summary of the entire content"
-    : queryType.isDefinition
-    ? "- Start with a clear definition, then expand briefly"
-    : queryType.isShort
-    ? "- Provide concise, short notes"
-    : "- Provide detailed, structured study notes"
+  let keyword = [];
+  tfidf.tfidfs(topic, (i, m) => {
+    keyword.push({ text: vector[i], score: m });
+  });
+
+  keyword.sort((a, b) => b.score - a.score);
+  keyword = keyword.slice(0, 2);
+
+  const combined = reciprocalRankFusion(
+    vector.map(t => ({ text: t })),
+    keyword
+  );
+
+  return combined.slice(0, 5);
 }
 
-- Write clear, well-structured notes
-- Use bullet points where appropriate
-- Avoid repetition and unnecessary filler
-- Ensure notes are easy to revise and understand
+// --- AI CORE ---
 
----------------------
-TEXTBOOK CONTEXT:
+async function runAI(type, req, res) {
+  const { topic, book = "all" } = req.body;
+  const userId = req.headers["x-user-id"];
+  const queryType = analyzeQuery(topic);
+
+  // ✅ CACHE FIXED
+  const { data: cached } = await supabase
+    .from("ai_cache")
+    .select("response")
+    .eq("user_id", userId)
+    .eq("topic", topic)
+    .eq("type", type)
+    .eq("book", book)
+    .maybeSingle();
+
+  if (cached) return res.json({ [type]: cached.response });
+
+  const chunks = await getContext(userId, topic, book);
+
+  // ✅ EMPTY CHECK FIXED
+  if (!chunks || chunks.length === 0) {
+    return res.json({ [type]: "No relevant content found." });
+  }
+
+  let maxChars = 1800;
+  if (queryType.isSummary) maxChars = 2500;
+  if (queryType.isShort) maxChars = 1000;
+
+  const context = buildContext(chunks, maxChars);
+
+  let prompt;
+
+  if (type === "explanation") {
+    prompt = `
+Explain clearly using the context.
+
+CONTEXT:
 ${context}
----------------------
 
 TOPIC:
 ${topic}
 
-STRUCTURE:
-
-# Topic Overview
-- Clear explanation of the topic
-
-# Key Concepts
-- Important ideas explained simply
-
-# Mechanisms / Processes (if applicable)
-- Step-by-step explanation
-
-# Key Points Summary
-- Bullet points for quick revision
-
-# Exam Tips
-- Important points likely to be tested
-
-TASK:
-Create structured study notes based primarily on the provided context, with clear explanations for understanding.
+- Use headings
+- Be detailed
 `;
+  }
 
-        const chat = await groq.chat.completions.create({
-            messages:[{role:"user",content:prompt}],
-            model:"llama-3.1-8b-instant",
-            temperature: 0.2,
-            max_tokens: 1500
-        });
+  else if (type === "notes") {
+    prompt = `
+Create structured study notes.
 
-        const output = chat.choices[0].message.content;
-
-        // 💾 SAVE TO CACHE
-        await supabase.from("ai_cache").insert({
-            user_id: userId,
-            topic,
-            level,
-            book,
-            type: "notes",
-            response: output
-        });
-
-        res.json({ notes: output });
-
-    } catch(err){
-        console.error("Notes error:", err);
-        res.status(500).json({ error:"Notes failed" });
-    }
-});
-  app.post("/quiz", async (req, res) => {
-    try {
-
-        const { topic, level, book } = req.body;
-        const queryType = analyzeQuery(topic);
-        const userId = req.headers["x-user-id"];
-
-        // 🔍 CHECK CACHE FIRST
-        const { data: cached } = await supabase
-            .from("ai_cache")
-            .select("response")
-            .eq("user_id", userId)
-            .eq("topic", topic)
-            .eq("level", level)
-            .eq("book", book)
-            .eq("type", "quiz")
-            .limit(1)
-            .single();
-
-        if (cached) {
-            console.log("⚡️ Quiz cache hit");
-            return res.json({ quiz: cached.response });
-        }
-
-        const queryVector = await embedText(topic.toLowerCase());
-
-        let results = [];
-        let booksToSearch = [];
-
-        if (book === "all") {
-            booksToSearch = Object.keys(vectorIndices[userId] || {});
-        } else {
-            booksToSearch = [book];
-        }
-
-        for (const b of booksToSearch) {
-
-            const vectors = vectorIndices[userId]?.[b];
-            const chunks = documentStore[userId]?.[b]?.childChunks;
-
-            if (!vectors || !chunks) continue;
-
-            vectors.forEach((vecObj,i)=>{
-                const score = cosineSimilarity(queryVector, vecObj.vector);
-                results.push({score,text:chunks[i]});
-            });
-        }
-
-        if (results.length === 0) {
-            return res.json({ quiz:"No study material found." });
-        }
-
-        results.sort((a,b)=>b.score-a.score);
-
-        let keywordResults = [];
-
-if (keywordIndices[userId] && keywordIndices[userId][book]) {
-  const tfidf = keywordIndices[userId][book];
-
-  tfidf.tfidfs(topic, function(i, measure) {
-    const chunk = documentStore[userId]?.[book]?.childChunks?.[i];
-
-    if (chunk && typeof chunk === "string") {
-      keywordResults.push({
-        score: measure,
-        text: chunk
-      });
-    }
-  });
-
-  keywordResults.sort((a,b)=>b.score-a.score);
-  keywordResults = keywordResults.slice(0, 3);
-}
-
-        // Extract raw chunks
-        const vectorContext = results.map(r => r.text);
-
-const vectorFormatted = vectorContext.map(text => ({ text }));
-
-const keywordFormatted = keywordResults.map(r => ({
-  text: r.text
-}));
-
-let combinedContext;
-
-if (keywordFormatted.length > 0) {
-  combinedContext = reciprocalRankFusion(
-    vectorFormatted,
-    keywordFormatted
-  );
-} else {
-  combinedContext = vectorContext;
-}
-        let rawChunks;
-
-if (queryType.isSummary) {
-  console.log("📘 Full summary mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
-
-} else if (queryType.isChapter) {
-  console.log("📘 Chapter mode");
-  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
-
-} else {
-  console.log("🔍 Semantic search mode");
-  rawChunks = combinedContext;
-}
-
-
-        // 🔥 Smart rerank
-        let bestChunks;
-
-        if (rawChunks.length > 8) {
-        bestChunks = await rerankChunks(topic, rawChunks);
-    } else {
-        bestChunks = rawChunks;
-}
-
-        // Build context
-        let maxChars = 2200;
-
-if (queryType.isSummary) maxChars = 3500;
-if (queryType.isDefinition) maxChars = 1200;
-if (queryType.isShort) maxChars = 1000;
-
-const context = buildSmartContext(bestChunks, maxChars);
-        if (!context || context.length < 100) {
-  return res.json({
-    explanation: "No relevant content found in the document."
-  });
-        }
-
-        const prompt = `
-You are an expert academic tutor creating high-quality quizzes for any subject.
-
-RULES:
-- Use the textbook context as your MAIN source
-- You MAY simplify concepts to make questions clearer
-- Do NOT contradict the context
-- Do NOT hallucinate or invent facts
-
-INSTRUCTIONS:
-- Do NOT greet the user
-- Adapt the quiz based on the request:
-
-${
-  queryType.isSummary
-    ? "- Cover a wide range of topics from the entire content"
-    : queryType.isDefinition
-    ? "- Focus on testing understanding of the definition and related ideas"
-    : queryType.isShort
-    ? "- Keep questions more direct and less complex"
-    : "- Create challenging questions that test deep understanding"
-}
-
-- Questions should test understanding, not just memorization
-- Avoid repeating the same concept
-- Make options realistic and not obvious
-- Keep explanations clear and based on the context
-
----------------------
-TEXTBOOK CONTEXT:
+CONTEXT:
 ${context}
----------------------
 
 TOPIC:
 ${topic}
-
-REQUIREMENTS:
-- Generate EXACTLY 10 multiple choice questions
-- Each question must have 4 options (A–D)
-- Only ONE correct answer per question
-- Provide the correct answer
-- Provide a short explanation
 
 FORMAT:
 
-Question 1  
-A)  
-B)  
-C)  
-D)  
-
-Correct Answer:  
-Explanation:  
-
-(Repeat for all 10 questions)
-
-TASK:
-Create a well-structured quiz based primarily on the provided context, ensuring clarity, accuracy, and appropriate difficulty.
+# Overview
+# Key Concepts
+# Processes
+# Summary Points
+# Exam Tips
 `;
+  }
 
-        
-        const chat = await groq.chat.completions.create({
-            messages:[{role:"user",content:prompt}],
-            model:"llama-3.1-8b-instant",
-            temperature: 0.2,
-            max_tokens: 1500
-        });
-            
-        const output = chat.choices[0].message.content;
+  else if (type === "quiz") {
+    prompt = `
+Create a quiz.
 
-        // 💾 SAVE TO CACHE
-        await supabase.from("ai_cache").insert({
-            user_id: userId,
-            topic,
-            level,
-            book,
-            type: "quiz",
-            response: output
-        });
+CONTEXT:
+${context}
 
-        res.json({ quiz: output });
+TOPIC:
+${topic}
 
-    } catch(err){
-        console.error("Quiz error:", err);
-        res.status(500).json({ error:"Quiz failed" });
-    }
-});
+- 10 questions
+- 4 options
+- correct answer
+- explanation
+`;
+  }
 
-app.post("/chat", async (req, res) => {
-    try {
-        const { query, history = [], books = [] } = req.body;
-        const userId = req.headers["x-user-id"];
+  const chat = await callGroqWithRetry({
+    model: "llama-3.1-8b-instant",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.2,
+  });
 
-        if (!query) return res.status(400).json({ error: "Query is required" });
-        if (!books || books.length === 0) return res.status(400).json({ error: "Select at least one book." });
+  const output = chat.choices[0].message.content;
 
-        const queryVector = await embedText(query.toLowerCase());
-        let allResults = [];
+  // ✅ CACHE SAVE FIXED
+  await supabase.from("ai_cache").insert({
+    user_id: userId,
+    topic,
+    type,
+    book,
+    response: output,
+  });
 
-        for (const book of books) {
-            const vectors = vectorIndices[userId]?.[book];
-            const childChunks = documentStore[userId]?.[book]?.childChunks;
+  res.json({ [type]: output });
+}
 
-            if (vectors && childChunks) {
-                vectors.forEach((vecObj, index) => {
-                    if (index < childChunks.length) {
-                        const score = cosineSimilarity(queryVector, vecObj.vector);
-                        allResults.push({ score, text: childChunks[index], book });
-                    }
-                });
-            }
-        }
+// --- ROUTES ---
+app.post("/deep-explain", (req, res) => runAI("explanation", req, res));
+app.post("/notes", (req, res) => runAI("notes", req, res));
+app.post("/quiz", (req, res) => runAI("quiz", req, res));
 
-        allResults.sort((a, b) => b.score - a.score);
+// --- PROGRESS ---
+app.get("/progress", (req, res) => {
+  const userId = req.headers["x-user-id"];
 
-        // Extract raw chunks
-        const rawChunks = allResults.map(r => r.text);
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Connection": "keep-alive",
+  });
 
-        // 🔥 Smart rerank (only if needed)
-            let bestChunks;
+  const handler = data => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
 
-    if (rawChunks.length > 5) {
-    bestChunks = await rerankChunks(query, rawChunks);
-    } else {
-    bestChunks = rawChunks;
-    }
+  progressEvents.on(userId, handler);
 
-// Build context
-        const context = bestChunks.join("\n\n---\n\n");
-
-        const prompt = `You are a helpful study assistant. Use the textbook excerpts to answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
-
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.1-8b-instant",
-            temperature: 0.5,
-        });
-
-        res.json({ answer: chatCompletion.choices[0].message.content });
-
-    } catch (err) {
-        console.error("Chat error:", err);
-        res.status(500).json({ error: "Chat generation failed." });
-    }
+  req.on("close", () => {
+    progressEvents.removeListener(userId, handler);
+  });
 });
 
 app.get("/books", async (req, res) => {
-    try {
-        const userId = req.headers["x-user-id"];
-        const { data, error } = await supabase.from("books").select("filename").eq("user_id", userId);
-        if (error) return res.status(500).json({ error: "Failed to load books" });
-        res.json(data.map(book => ({ name: book.filename })));
-    } catch (err) { 
-        res.status(500).json({ error: "Server error" }); 
-    }
+  const userId = req.headers["x-user-id"];
+
+  const { data, error } = await supabase
+    .from("books")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (error) return res.status(500).json([]);
+
+  res.json(data || []);
 });
 
-app.delete("/delete-book/:name", async (req, res) => {
-    const name = decodeURIComponent(req.params.name);
-    const userId = req.headers["x-user-id"];
-
-    if (documentStore[userId] && documentStore[userId][name]) {
-        delete documentStore[userId][name];
-        delete keywordIndices[userId]?.[name];
-        delete vectorIndices[userId]?.[name];
-        saveCache();
-        return res.json({ success: true });
-    }
-    res.status(404).json({ error: "Not found" });
-});
-
-app.get("/health", (req, res) => res.json({ status: "ok" }));
-
-app.get("/progress", (req, res) => {
-    res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-    });
-
-    const onProgress = (data) => {
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-
-    progressEvents.on("update", onProgress);
-
-    req.on("close", () => {
-        progressEvents.removeListener("update", onProgress);
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
-
-    console.log(`🚀 Server running on port ${PORT}`);
-
-    try {
-        await rebuildIndexesFromSupabase();
-    } catch (err) {
-        console.error("Startup index rebuild failed:", err);
-    }
-
-});
+// --- SERVER ---
+app.listen(3000, () => console.log("🚀 Running"));
