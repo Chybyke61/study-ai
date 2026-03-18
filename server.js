@@ -368,7 +368,7 @@ app.post("/quiz", (req, res) => runAI("quiz", req, res));
 
 // --- PROGRESS ---
 app.get("/progress", (req, res) => {
-  const userId = req.headers["x-user-id"];
+  const userId = req.query.userId;
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
