@@ -559,9 +559,22 @@ function reciprocalRankFusion(vectorResults, keywordResults, k = 60) {
     .map(item => item.text);
 }
 
+function analyzeQuery(topic) {
+  const t = topic.toLowerCase();
+
+  return {
+    isSummary: /summari[sz]e|overview|whole|entire|full/.test(t),
+    isChapter: /chapter\s*\d+/.test(t),
+    isDefinition: /define|what is|meaning of/.test(t),
+    isExplanation: /explain|how|why|discuss/.test(t),
+    isShort: /brief|short|in few words/.test(t)
+  };
+}
+
 app.post("/deep-explain", async (req, res) => {
     try {
         const { topic, level = "University", book = "all" } = req.body;
+        const queryType = analyzeQuery(topic);
         const userId = req.headers["x-user-id"];
 
         // 🔍 CHECK CACHE FIRST
@@ -648,7 +661,20 @@ console.log("Combined results:", combinedContext.length);
 }
 
 // Extract raw chunks
-const rawChunks = combinedContext;
+let rawChunks;
+
+if (queryType.isSummary) {
+  console.log("📘 Full summary mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
+
+} else if (queryType.isChapter) {
+  console.log("📘 Chapter mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
+
+} else {
+  console.log("🔍 Semantic search mode");
+  rawChunks = combinedContext;
+}
 
 // 🔥 Smart rerank (only when needed)
 let bestChunks;
@@ -661,31 +687,51 @@ if (rawChunks.length > 8) {
 
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-const context = buildSmartContext(bestChunks, 2200);
+let maxChars = 2200;
+
+if (queryType.isSummary) maxChars = 3500;
+if (queryType.isDefinition) maxChars = 1200;
+if (queryType.isShort) maxChars = 1000;
+
+const context = buildSmartContext(bestChunks, maxChars);
+
+        if (!context || context.length < 100) {
+            return res.json({
+                explanation: "No relevant content found in the document."
+  });
+        }
 
         const prompt = `
 You are an expert academic tutor for all subjects (science, medicine, engineering, humanities, business, etc.).
 
-STRICT RULES:
-- You MUST use ONLY the provided textbook context
-- You are NOT allowed to use outside knowledge
-- If the answer is not clearly contained in the context, respond exactly with:
-  "This is not found in the provided material"
-- Do NOT guess, infer beyond the text, or hallucinate
+RULES:
+- Use the textbook context as your MAIN source
+- You MAY clarify and simplify concepts for better understanding
+- You MAY add general knowledge ONLY to explain or connect ideas
+- Do NOT contradict the context
+- Do NOT hallucinate or invent facts not supported by the context
 
 INSTRUCTIONS:
 - Do NOT greet the user
-- Do NOT say "Welcome", "Hello", or address the student directly
-- Start immediately with the explanation
-- Do NOT include a "Definition" section
-- Organize the explanation using clear headings
-- Each heading must explain a key concept
-- Provide deep, detailed explanations under each heading
-- Explain mechanisms, processes, and relationships clearly
-- Only include examples if they are supported by the context
-- Ensure the explanation is understandable without needing the original textbook
-- Use clear academic language suitable for university-level learning
+- Do NOT say "Welcome" or "Hello"
+- Adapt your response based on the request:
+
+${
+  queryType.isDefinition
+    ? "- Start with a clear definition, then provide a short explanation"
+    : queryType.isSummary
+    ? "- Provide a structured summary of the content"
+    : queryType.isShort
+    ? "- Provide a brief and concise explanation"
+    : "- Provide a detailed explanation using clear headings"
+}
+
+- Start immediately with the answer
+- Use clear headings where appropriate
+- Explain concepts, mechanisms, and relationships clearly
+- Use simple but academic language
 - Avoid repetition and vague statements
+- Ensure the explanation is easy to understand
 
 ---------------------
 TEXTBOOK CONTEXT:
@@ -696,8 +742,12 @@ TOPIC:
 ${topic}
 
 TASK:
-Provide a structured, detailed explanation using headings and well-developed paragraphs strictly based on the context.
+Provide a clear, structured explanation based primarily on the context, with additional clarification where necessary for understanding.
 `;
+
+        
+
+        
     
         const chat = await groq.chat.completions.create({
             messages: [{ role:"user", content:prompt }],
@@ -730,6 +780,7 @@ app.post("/notes", async (req, res) => {
     try {
 
         const { topic, level, book } = req.body;
+        const queryType = analyzeQuery(topic);
         const userId = req.headers["x-user-id"];
         // 🔍 CHECK CACHE FIRST
         const { data: cached } = await supabase
@@ -818,7 +869,20 @@ if (keywordFormatted.length > 0) {
   combinedContext = vectorContext;
 }
 
-const rawChunks = combinedContext;
+let rawChunks;
+
+if (queryType.isSummary) {
+  console.log("📘 Full summary mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
+
+} else if (queryType.isChapter) {
+  console.log("📘 Chapter mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
+
+} else {
+  console.log("🔍 Semantic search mode");
+  rawChunks = combinedContext;
+}
 
         // 🔥 Smart rerank
         let bestChunks;
@@ -830,26 +894,47 @@ const rawChunks = combinedContext;
     }
 
     // Build context
-    const context = buildSmartContext(bestChunks, 2200);
+    let maxChars = 2200;
+
+if (queryType.isSummary) maxChars = 3500;
+if (queryType.isDefinition) maxChars = 1200;
+if (queryType.isShort) maxChars = 1000;
+
+const context = buildSmartContext(bestChunks, maxChars);
+
+        if (!context || context.length < 100) {
+  return res.json({
+    explanation: "No relevant content found in the document."
+  });
+        }
 
         const prompt = `
 You are an expert academic tutor creating high-quality study notes for any subject.
 
-STRICT RULES:
-- You MUST use ONLY the provided textbook context
-- You are NOT allowed to use outside knowledge
-- If the topic is not clearly covered in the context, respond exactly with:
-  "This is not found in the provided material"
-- Do NOT guess or hallucinate
+RULES:
+- Use the textbook context as your MAIN source
+- You MAY simplify and clarify concepts for better understanding
+- Do NOT contradict the context
+- Do NOT hallucinate or invent facts
 
 INSTRUCTIONS:
 - Do NOT greet the user
-- Do NOT say "Welcome" or "Hello"
-- Write clear, well-structured study notes
-- Use concise but detailed explanations
-- Avoid repetition and filler text
-- Ensure notes are easy to revise and memorize
+- Adapt your notes based on the request:
+
+${
+  queryType.isSummary
+    ? "- Provide a structured summary of the entire content"
+    : queryType.isDefinition
+    ? "- Start with a clear definition, then expand briefly"
+    : queryType.isShort
+    ? "- Provide concise, short notes"
+    : "- Provide detailed, structured study notes"
+}
+
+- Write clear, well-structured notes
 - Use bullet points where appropriate
+- Avoid repetition and unnecessary filler
+- Ensure notes are easy to revise and understand
 
 ---------------------
 TEXTBOOK CONTEXT:
@@ -862,24 +947,23 @@ ${topic}
 STRUCTURE:
 
 # Topic Overview
-- Provide a clear explanation of the topic based strictly on the context
+- Clear explanation of the topic
 
 # Key Concepts
-- List and explain the most important ideas from the context
+- Important ideas explained simply
 
-# Mechanisms / Processes
-- Explain step-by-step processes or how things work (if applicable)
+# Mechanisms / Processes (if applicable)
+- Step-by-step explanation
 
 # Key Points Summary
-- Provide concise bullet points for quick revision
+- Bullet points for quick revision
 
 # Exam Tips
-- Highlight likely exam areas based ONLY on the context
+- Important points likely to be tested
 
 TASK:
-Create detailed, structured study notes strictly based on the provided context.
+Create structured study notes based primarily on the provided context, with clear explanations for understanding.
 `;
-
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
@@ -911,6 +995,7 @@ Create detailed, structured study notes strictly based on the provided context.
     try {
 
         const { topic, level, book } = req.body;
+        const queryType = analyzeQuery(topic);
         const userId = req.headers["x-user-id"];
 
         // 🔍 CHECK CACHE FIRST
@@ -999,8 +1084,21 @@ if (keywordFormatted.length > 0) {
 } else {
   combinedContext = vectorContext;
 }
+        let rawChunks;
 
-const rawChunks = combinedContext;
+if (queryType.isSummary) {
+  console.log("📘 Full summary mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 50) || [];
+
+} else if (queryType.isChapter) {
+  console.log("📘 Chapter mode");
+  rawChunks = documentStore[userId]?.[book]?.childChunks?.slice(0, 20) || [];
+
+} else {
+  console.log("🔍 Semantic search mode");
+  rawChunks = combinedContext;
+}
+
 
         // 🔥 Smart rerank
         let bestChunks;
@@ -1012,26 +1110,46 @@ const rawChunks = combinedContext;
 }
 
         // Build context
-        const context = buildSmartContext(bestChunks, 2200);
+        let maxChars = 2200;
+
+if (queryType.isSummary) maxChars = 3500;
+if (queryType.isDefinition) maxChars = 1200;
+if (queryType.isShort) maxChars = 1000;
+
+const context = buildSmartContext(bestChunks, maxChars);
+        if (!context || context.length < 100) {
+  return res.json({
+    explanation: "No relevant content found in the document."
+  });
+        }
 
         const prompt = `
-You are an expert academic tutor creating a challenging university-level quiz for any subject.
+You are an expert academic tutor creating high-quality quizzes for any subject.
 
-STRICT RULES:
-- You MUST use ONLY the provided textbook context
-- You are NOT allowed to use outside knowledge
-- Every question MUST be directly based on the context
-- If there is not enough information to create the quiz, respond exactly with:
-  "This is not found in the provided material"
-- Do NOT guess or hallucinate
+RULES:
+- Use the textbook context as your MAIN source
+- You MAY simplify concepts to make questions clearer
+- Do NOT contradict the context
+- Do NOT hallucinate or invent facts
 
 INSTRUCTIONS:
 - Do NOT greet the user
-- Do NOT include any introductory text
-- Make the questions challenging (application, reasoning, not just recall)
+- Adapt the quiz based on the request:
+
+${
+  queryType.isSummary
+    ? "- Cover a wide range of topics from the entire content"
+    : queryType.isDefinition
+    ? "- Focus on testing understanding of the definition and related ideas"
+    : queryType.isShort
+    ? "- Keep questions more direct and less complex"
+    : "- Create challenging questions that test deep understanding"
+}
+
+- Questions should test understanding, not just memorization
 - Avoid repeating the same concept
-- Ensure options are realistic and not obvious
-- Keep explanations clear and directly tied to the context
+- Make options realistic and not obvious
+- Keep explanations clear and based on the context
 
 ---------------------
 TEXTBOOK CONTEXT:
@@ -1046,7 +1164,7 @@ REQUIREMENTS:
 - Each question must have 4 options (A–D)
 - Only ONE correct answer per question
 - Provide the correct answer
-- Provide a short explanation based ONLY on the context
+- Provide a short explanation
 
 FORMAT:
 
@@ -1060,8 +1178,12 @@ Correct Answer:
 Explanation:  
 
 (Repeat for all 10 questions)
+
+TASK:
+Create a well-structured quiz based primarily on the provided context, ensuring clarity, accuracy, and appropriate difficulty.
 `;
 
+        
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
             model:"llama-3.1-8b-instant",
