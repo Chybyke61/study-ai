@@ -16,6 +16,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
+const { type } = require("os");
 
 // --- INITIALIZATION ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -525,6 +526,7 @@ app.post("/deep-explain", async (req, res) => {
             .eq("topic", topic)
             .eq("level", level)
             .eq("book", book)
+            .eq("type", "explain")
             .limit(1)
             .single();
 
@@ -646,6 +648,7 @@ Provide a structured explanation using headings and detailed paragraphs.
             topic,
             level,
             book,
+            type: "explain",
             response: output
         });
 
@@ -659,8 +662,24 @@ Provide a structured explanation using headings and detailed paragraphs.
 app.post("/notes", async (req, res) => {
     try {
 
-        const { topic, book } = req.body;
+        const { topic, level, book } = req.body;
         const userId = req.headers["x-user-id"];
+        // 🔍 CHECK CACHE FIRST
+        const { data: cached } = await supabase
+            .from("ai_cache")
+            .select("response")
+            .eq("user_id", userId)
+            .eq("topic", topic)
+            .eq("level", level)
+            .eq("book", book)
+            .eq("type", "notes")
+            .limit(1)
+            .single();
+
+        if (cached) {
+            console.log("⚡️ Notes cache hit");
+            return res.json({ notes: cached.response });
+        }
 
         const queryVector = await embedText(topic.toLowerCase());
 
@@ -733,9 +752,19 @@ The notes must be detailed and structured for studying.
             model:"llama-3.1-8b-instant",
         });
 
-        res.json({
-            notes: chat.choices[0].message.content
+        const output = chat.choices[0].message.content;
+
+        // 💾 SAVE TO CACHE
+        await supabase.from("ai_cache").insert({
+            user_id: userId,
+            topic,
+            level,
+            book,
+            type: "notes",
+            response: output
         });
+
+        res.json({ notes: output });
 
     } catch(err){
         console.error("Notes error:", err);
@@ -745,8 +774,25 @@ The notes must be detailed and structured for studying.
   app.post("/quiz", async (req, res) => {
     try {
 
-        const { topic, book } = req.body;
+        const { topic, level, book } = req.body;
         const userId = req.headers["x-user-id"];
+
+        // 🔍 CHECK CACHE FIRST
+        const { data: cached } = await supabase
+            .from("ai_cache")
+            .select("response")
+            .eq("user_id", userId)
+            .eq("topic", topic)
+            .eq("level", level)
+            .eq("book", book)
+            .eq("type", "quiz")
+            .limit(1)
+            .single();
+
+        if (cached) {
+            console.log("⚡️ Quiz cache hit");
+            return res.json({ quiz: cached.response });
+        }
 
         const queryVector = await embedText(topic.toLowerCase());
 
@@ -825,9 +871,19 @@ Explanation:
             model:"llama-3.1-8b-instant",
         });
 
-        res.json({
-            quiz: chat.choices[0].message.content
+        const output = chat.choices[0].message.content;
+
+        // 💾 SAVE TO CACHE
+        await supabase.from("ai_cache").insert({
+            user_id: userId,
+            topic,
+            level,
+            book,
+            type: "quiz",
+            response: output
         });
+
+        res.json({ quiz: output });
 
     } catch(err){
         console.error("Quiz error:", err);
