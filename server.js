@@ -517,6 +517,22 @@ app.post("/deep-explain", async (req, res) => {
         const { topic, book } = req.body;
         const userId = req.headers["x-user-id"];
 
+        // 🔍 CHECK CACHE FIRST
+        const { data: cached } = await supabase
+            .from("ai_cache")
+            .select("response")
+            .eq("user_id", userId)
+            .eq("topic", topic)
+            .eq("level", level)
+            .eq("book", book)
+            .limit(1)
+            .single();
+
+        if (cached) {
+            console.log("⚡️ Cache hit");
+            return res.json({ explanation: cached.response });
+        }
+
         if (!topic) {
             return res.status(400).json({ error: "Topic required" });
         }
@@ -622,9 +638,18 @@ Provide a structured explanation using headings and detailed paragraphs.
             max_tokens: 1500
         });
 
-        res.json({
-            explanation: chat.choices[0].message.content
+        const output = chat.choices[0].message.content;
+
+        // 💾 SAVE TO CACHE
+        await supabase.from("ai_cache").insert({
+            user_id: userId,
+            topic,
+            level,
+            book,
+            response: output
         });
+
+        res.json({ explanation: output });
 
     } catch(err) {
         console.error("Explain error:", err);
