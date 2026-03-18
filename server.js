@@ -2,6 +2,8 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const EventEmitter = require("events");
+const progressEvents = new EventEmitter();
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
@@ -389,6 +391,8 @@ app.post("/upload", async (req, res) => {
            writeStream.on("finish", () => {
            console.log("✅ File fully downloaded");
            resolve();
+
+        progressEvents.emit("update", { step: "Uploading...", progress: 10 });
     });
 
           response.Body.pipe(writeStream);
@@ -399,6 +403,7 @@ app.post("/upload", async (req, res) => {
         // 2. Extract Text
         console.log("STEP 1: Starting upload");
         const text = await extractText({ path: tempPath });
+        progressEvents.emit("update", { step: "Extracting...", progress: 30 });
         console.log("STEP 2: Extracted text length:", text ? text.length : 0);
 
         // CRITICAL: Stop if extraction failed
@@ -410,6 +415,7 @@ app.post("/upload", async (req, res) => {
         // 3. Chunking
         const parentChunks = recursiveChunk(text, 1500, 200);
         const childChunks = recursiveChunk(text, 700, 100);
+        progressEvents.emit("update", { step: "Chunking...", progress: 50 });
 
         // 🚀 LIMIT chunks (IMPORTANT)
         const MAX_CHUNKS = 20;
@@ -445,13 +451,22 @@ for (let i = 0; i < limitedChunks.length; i += batchSize) {
         });
     });
 
-    console.log(`📊 Progress: ${Math.min(i + batch.length, childChunks.length)}/${childChunks.length}`);
+    const progress = 60 + Math.floor(((i + batch.length) / limitedChunks.length) * 30);
+
+    progressEvents.emit("update", {
+    step: "Embedding...",
+    progress
+});
+
+    console.log(`📊 Progress: ${Math.min(i + batch.length, limitedChunks.length)}/${limitedChunks.length}`);
 }
 
 // ONE INSERT (FAST 🚀)
 const { error } = await supabase
     .from("book_chunks")
     .insert(insertBatch);
+
+progressEvents.emit("update", { step: "Saving...", progress: 90 });
 
 if (error) {
     console.error("❌ Supabase batch insert error:", error);
@@ -479,6 +494,8 @@ console.log("✅ All chunks saved successfully");
                 if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
             }
         });
+
+        progressEvents.emit("update", { step: "Completed ✅", progress: 100 });
 
         // 6. Respond immediately to Frontend
         res.json({ success: true, name: filename });
@@ -877,6 +894,24 @@ app.delete("/delete-book/:name", async (req, res) => {
 });
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
+
+app.get("/progress", (req, res) => {
+    res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+    });
+
+    const onProgress = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    progressEvents.on("update", onProgress);
+
+    req.on("close", () => {
+        progressEvents.removeListener("update", onProgress);
+    });
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
