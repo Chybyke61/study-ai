@@ -514,7 +514,7 @@ console.log("✅ All chunks saved successfully");
 
 app.post("/deep-explain", async (req, res) => {
     try {
-        const { topic, book } = req.body;
+        const { topic, level, book } = req.body;
         const userId = req.headers["x-user-id"];
 
         // 🔍 CHECK CACHE FIRST
