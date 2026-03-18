@@ -192,11 +192,14 @@ async function addToIndex(userId, filename, children) {
     if (!keywordIndices[userId]) keywordIndices[userId] = {};
     if (!vectorIndices[userId]) vectorIndices[userId] = {};
 
+    const MAX_CHUNKS = 100;
+children = children.slice(0, MAX_CHUNKS);
+
     const tfidf = new natural.TfIdf();
     const vectors = [];
     
     // Strict batch size prevents buffer overflow on constrained hardware
-    const batchSize = 20; 
+    const batchSize = 50; 
 
     children.forEach(chunk => {
     if (!chunk || typeof chunk !== "string") return;
@@ -419,7 +422,7 @@ app.post("/upload", async (req, res) => {
         progressEvents.emit("update", { step: "Chunking...", progress: 50 });
 
         // 🚀 LIMIT chunks (IMPORTANT)
-        const MAX_CHUNKS = 20;
+        const MAX_CHUNKS = 100;
         const limitedChunks = childChunks.slice(0, MAX_CHUNKS);
         console.log("STEP 3: Chunks created:", childChunks.length);
 
@@ -432,7 +435,7 @@ app.post("/upload", async (req, res) => {
         // Save chunks to Supabase so they survive redeploy
 console.log(`⚡️ Embedding ${limitedChunks.length} chunks...`);
 
-const batchSize = 20;
+const batchSize = 50;
 const insertBatch = [];
 
 for (let i = 0; i < limitedChunks.length; i += batchSize) {
@@ -512,6 +515,24 @@ console.log("✅ All chunks saved successfully");
 
 }
 });
+
+function buildSmartContext(chunks, maxChars = 2500) {
+  let context = "";
+  let used = 0;
+
+  for (const chunk of chunks) {
+    if (!chunk || typeof chunk !== "string") continue;
+
+    const clean = chunk.trim();
+
+    if (used + clean.length > maxChars) break;
+
+    context += clean + "\n\n---\n\n";
+    used += clean.length;
+  }
+
+  return context.trim();
+}
 
 app.post("/deep-explain", async (req, res) => {
     try {
@@ -593,7 +614,7 @@ const rawChunks = combinedContext;
 // 🔥 Smart rerank (only when needed)
 let bestChunks;
 
-if (rawChunks.length > 5) {
+if (rawChunks.length > 8) {
     bestChunks = await rerankChunks(topic, rawChunks);
 } else {
     bestChunks = rawChunks;
@@ -601,11 +622,7 @@ if (rawChunks.length > 5) {
 
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-const limitedChunks = bestChunks.slice(0, 3); // reduce from 5 → 3
-
-const context = limitedChunks
-    .map(c => c.slice(0, 800)) // limit each chunk
-    .join("\n\n---\n\n");
+const context = buildSmartContext(bestChunks, 2500);
     
 
  const prompt = `
@@ -717,14 +734,14 @@ app.post("/notes", async (req, res) => {
         // 🔥 Smart rerank
         let bestChunks;
 
-        if (rawChunks.length > 5) {
+        if (rawChunks.length > 8) {
             bestChunks = await rerankChunks(topic, rawChunks);
     } else {
             bestChunks = rawChunks;
     }
 
     // Build context
-    const context = bestChunks.join("\n\n---\n\n");
+    const context = buildSmartContext(bestChunks, 2500);
 
 
         const prompt = `
@@ -830,14 +847,14 @@ The notes must be detailed and structured for studying.
         // 🔥 Smart rerank
         let bestChunks;
 
-        if (rawChunks.length > 5) {
+        if (rawChunks.length > 8) {
         bestChunks = await rerankChunks(topic, rawChunks);
     } else {
         bestChunks = rawChunks;
 }
 
         // Build context
-        const context = bestChunks.join("\n\n---\n\n");
+        const context = buildSmartContext(bestChunks, 2500);
 
         const prompt = `
 Create a **difficult university-level quiz**.
