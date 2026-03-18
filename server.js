@@ -496,9 +496,6 @@ console.log("✅ All chunks saved successfully");
 });
 
 app.post("/deep-explain", async (req, res) => {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
     try {
         const { topic, book } = req.body;
         const userId = req.headers["x-user-id"];
@@ -601,23 +598,16 @@ ${topic}
 Provide a structured explanation using headings and detailed paragraphs.
 `;
 
-        const stream = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.2,
-    stream: true
-});
+        const chat = await groq.chat.completions.create({
+            messages: [{ role:"user", content:prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.2,
+            max_tokens: 1500
+        });
 
-for await (const chunk of stream) {
-    const content = chunk.choices?.[0]?.delta?.content;
-
-    if (content) {
-        res.write(`data: ${content}\n\n`);
-    }
-}
-
-res.write("data: [DONE]\n\n");
-res.end();        
+        res.json({
+            explanation: chat.choices[0].message.content
+        });
 
     } catch(err) {
         console.error("Explain error:", err);
