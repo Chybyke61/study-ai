@@ -544,35 +544,14 @@ app.post("/deep-explain", async (req, res) => {
             const { data, error } = await 
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
-            match_threshold: 0,
+            match_threshold: 0.6,
             match_count: 5,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
         });
 
-        //let keywordResults = [];
-
-//if (keywordIndices[userId] && keywordIndices[userId][book]) {
-
- /* const tfidf = keywordIndices[userId][book];
-
-  tfidf.tfidfs(topic, function(i, measure) {
-    keywordResults.push({
-      score: measure,
-      text: documentStore[userId][book].childChunks[i]
-    });
-  });
-
-  keywordResults.sort((a,b)=>b.score-a.score);
-
-  keywordResults = keywordResults.slice(0,3);
-
-}*/
-
+        
 const vectorContext = data ? data.map(row => row.content) : [];
-//const keywordContext = keywordResults.map(r => r.text);
-
-//const combinedContext = [...vectorContext, ...keywordContext];
   const combinedContext = vectorContext;
 
         console.log("Vector search results:", data);
@@ -585,8 +564,10 @@ console.log("Combined results:", combinedContext.length);
     console.error("Vector search error:", error);
 }
         if (!data || data.length === 0) {
-  return res.json({ explanation: "No study material found for this topic." });
-}
+    return res.json({
+        explanation: "This topic is not related to your uploaded materials."
+    });
+        }
 
 // Extract raw chunks
 const rawChunks = combinedContext;
@@ -615,9 +596,13 @@ You are an expert academic tutor.
 Instructions:
 - Do NOT greet the user.
 - Do NOT say "Welcome", "Hello", or address the student directly.
-- Start immediately with the explanation of the topic.
 - Do NOT include a "Definition" section.
 - Organize the explanation using clear headings.
+- Use the provided textbook context as your PRIMARY source.
+- You MAY use general knowledge ONLY to clarify or explain concepts better.
+- Do NOT answer questions unrelated to the textbook.
+- If unrelated, say:
+  "This topic is not related to your uploaded study material."
 - Each heading should explain an important concept related to the topic.
 - Write detailed explanations so the student can understand the topic without reading the textbook.
 - Expand mechanisms, processes, causes, and relationships thoroughly.
@@ -686,7 +671,7 @@ app.post("/notes", async (req, res) => {
   
         const { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
-    match_threshold: 0,
+    match_threshold: 0.6,
     match_count: 5,
     p_user_id: userId,
     p_filename: book === "all" ? null : book
@@ -697,7 +682,9 @@ if (error) {
 }
 
 if (!data || data.length === 0) {
-    return res.json({ notes: "No study material found." });
+    return res.json({
+        notes: "This topic is not related to your uploaded materials."
+    });
 }
 
 const rawChunks = data.map(row => row.content);
@@ -716,7 +703,14 @@ const rawChunks = data.map(row => row.content);
 
 
         const prompt = `
-Create **detailed university-level study notes**.
+Create detailed university-level study notes.
+
+Instructions:
+- Use textbook context as PRIMARY source
+- You MAY add small external knowledge for clarity
+- Do NOT include unrelated information
+- If topic is unrelated, say:
+  "This topic is not related to your uploaded study material."
 
 Topic: ${topic}
 
@@ -787,8 +781,8 @@ The notes must be detailed and structured for studying.
 
 const { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
-    match_threshold: 0,
-    match_count: 5,
+    match_threshold: 0.6,
+    match_count: 3,
     p_user_id: userId,
     p_filename: book === "all" ? null : book
 });
@@ -798,7 +792,9 @@ if (error) {
     return res.json({ quiz: "Search failed. Try again." });
 }
 if (!data || data.length === 0) {
-    return res.json({ quiz: "No study material found." });
+    return res.json({
+        quiz: "This topic is not related to your uploaded materials."
+    });
 }
 
 const rawChunks = data.map(row => row.content);
@@ -813,11 +809,21 @@ if (rawChunks.length > 5) {
 }
 
 // Build context
-const context = bestChunks.join("\n\n---\n\n");
+const context = bestChunks
+    .slice(0, 3)
+    .map(c => c.slice(0, 800))
+    .join("\n\n---\n\n");
 
       
         const prompt = `
-Create a **difficult university-level quiz**.
+Create a difficult university-level quiz.
+Instructions:
+- Base questions primarily on the textbook context.
+- You MAY use small external knowledge only to improve clarity.
+- Do NOT create questions outside the provided context.
+- If the topic is unrelated to the context, say:
+  "This topic is not related to your uploaded study material."
+
 
 Topic: ${topic}
 
