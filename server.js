@@ -544,7 +544,7 @@ app.post("/deep-explain", async (req, res) => {
             const { data, error } = await 
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
-            match_threshold: 0.4,
+            match_threshold: 0,
             match_count: 5,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
