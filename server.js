@@ -393,7 +393,7 @@ app.post("/upload", async (req, res) => {
            console.log("✅ File fully downloaded");
            resolve();
 
-        progressEvents.emit("update", { step: "Uploading...", progress: 10 });
+        progressEvents.emit(`update-${userId}`, { step: "Uploading...", progress: 10 });
     });
 
           response.Body.pipe(writeStream);
@@ -404,7 +404,7 @@ app.post("/upload", async (req, res) => {
         // 2. Extract Text
         console.log("STEP 1: Starting upload");
         const text = await extractText({ path: tempPath });
-        progressEvents.emit("update", { step: "Extracting...", progress: 30 });
+        progressEvents.emit(`update-${userId}`, { step: "Extracting...", progress: 30 });
         console.log("STEP 2: Extracted text length:", text ? text.length : 0);
 
         // CRITICAL: Stop if extraction failed
@@ -416,15 +416,15 @@ app.post("/upload", async (req, res) => {
         // 3. Chunking
         const parentChunks = recursiveChunk(text, 1500, 200);
         const childChunks = recursiveChunk(text, 700, 100);
-        progressEvents.emit("update", { step: "Chunking...", progress: 50 });
+        progressEvents.emit(`update-${userId}`, { step: "Chunking...", progress: 50 });
 
         // 🚀 LIMIT chunks (IMPORTANT)
         const MAX_CHUNKS = 20;
         const limitedChunks = childChunks.slice(0, MAX_CHUNKS);
         console.log("STEP 3: Chunks created:", childChunks.length);
 
-        if (!documentStore[userId]) documentStore[userId] = {};
-        documentStore[userId][filename] = { parentChunks, childChunks };
+        //if (!documentStore[userId]) documentStore[userId] = {};
+       // documentStore[userId][filename] = { parentChunks, childChunks };
      
 
         console.log("STEP 4: Starting embedding...");
@@ -454,7 +454,7 @@ for (let i = 0; i < limitedChunks.length; i += batchSize) {
 
     const progress = 60 + Math.floor(((i + batch.length) / limitedChunks.length) * 30);
 
-    progressEvents.emit("update", {
+    progressEvents.emit(`update-${userId}`, {
     step: "Embedding...",
     progress
 });
@@ -467,7 +467,7 @@ const { error } = await supabase
     .from("book_chunks")
     .insert(insertBatch);
 
-progressEvents.emit("update", { step: "Saving...", progress: 90 });
+progressEvents.emit(`update-${userId}`, { step: "Saving...", progress: 90 });
 
 if (error) {
     console.error("❌ Supabase batch insert error:", error);
@@ -486,7 +486,7 @@ console.log("✅ All chunks saved successfully");
         // 5. Indexing in background (Non-blocking)
         setImmediate(async () => {
             try {
-                await addToIndex(userId, filename, childChunks);
+               // await addToIndex(userId, filename, childChunks);
                 console.log(`✅ Indexing complete for: ${filename}`);
             } catch (err) {
                 console.error("Indexing failed in background:", err);
@@ -496,7 +496,7 @@ console.log("✅ All chunks saved successfully");
             }
         });
 
-        progressEvents.emit("update", { step: "Completed ✅", progress: 100 });
+        progressEvents.emit(`update-${userId}`, { step: "Completed ✅", progress: 100 });
 
         // 6. Respond immediately to Frontend
         res.json({ success: true, name: filename });
@@ -550,9 +550,9 @@ app.post("/deep-explain", async (req, res) => {
             p_filename: book === "all" ? null : book
         });
 
-        let keywordResults = [];
+        //let keywordResults = [];
 
-if (keywordIndices[userId] && keywordIndices[userId][book]) {
+//if (keywordIndices[userId] && keywordIndices[userId][book]) {
 
   const tfidf = keywordIndices[userId][book];
 
@@ -572,7 +572,8 @@ if (keywordIndices[userId] && keywordIndices[userId][book]) {
 const vectorContext = data ? data.map(row => row.content) : [];
 const keywordContext = keywordResults.map(r => r.text);
 
-const combinedContext = [...vectorContext, ...keywordContext];
+//const combinedContext = [...vectorContext, ...keywordContext];
+  const combinedContext = vectorContext;
 
         console.log("Vector search results:", data);
         console.log("Vector results:", vectorContext.length);
@@ -987,10 +988,12 @@ app.get("/progress", (req, res) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    progressEvents.on("update", onProgress);
+    const userId = req.query.userId;
+
+progressEvents.on(`update-${userId}`, onProgress);
 
     req.on("close", () => {
-        progressEvents.removeListener("update", onProgress);
+        progressEvents.removeListener(`update-${userId}`, onProgress);
     });
 });
 
