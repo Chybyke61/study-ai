@@ -565,9 +565,9 @@ app.post("/deep-explain", async (req, res) => {
 
   keywordResults.sort((a,b)=>b.score-a.score);
 
-  keywordResults = keywordResults.slice(0,3);*/
+  keywordResults = keywordResults.slice(0,3);
 
-}
+}*/
 
 const vectorContext = data ? data.map(row => row.content) : [];
 //const keywordContext = keywordResults.map(r => r.text);
