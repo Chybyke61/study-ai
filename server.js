@@ -683,37 +683,24 @@ app.post("/notes", async (req, res) => {
         }
 
         const queryVector = await embedText(topic.toLowerCase());
+  
+        const { data, error } = await supabase.rpc("match_book_chunks", {
+    query_embedding: queryVector,
+    match_threshold: 0,
+    match_count: 5,
+    p_user_id: userId,
+    p_filename: book === "all" ? null : book
+});
 
-        let results = [];
-        let booksToSearch = [];
+if (error) {
+    console.error("Vector search error:", error);
+}
 
-        if (book === "all") {
-            booksToSearch = Object.keys(vectorIndices[userId] || {});
-        } else {
-            booksToSearch = [book];
-        }
+if (!data || data.length === 0) {
+    return res.json({ notes: "No study material found." });
+}
 
-        for (const b of booksToSearch) {
-
-            const vectors = vectorIndices[userId]?.[b];
-            const chunks = documentStore[userId]?.[b]?.childChunks;
-
-            if (!vectors || !chunks) continue;
-
-            vectors.forEach((vecObj,i)=>{
-                const score = cosineSimilarity(queryVector, vecObj.vector);
-                results.push({score,text:chunks[i]});
-            });
-        }
-
-        if (results.length === 0) {
-            return res.json({ notes:"No study material found." });
-        }
-
-        results.sort((a,b)=>b.score-a.score);
-
-        // Extract raw chunks
-        const rawChunks = results.map(r => r.text);
+const rawChunks = data.map(row => row.content);
 
         // 🔥 Smart rerank
         let bestChunks;
@@ -795,51 +782,40 @@ The notes must be detailed and structured for studying.
             return res.json({ quiz: cached.response });
         }
 
+      
         const queryVector = await embedText(topic.toLowerCase());
 
-        let results = [];
-        let booksToSearch = [];
+const { data, error } = await supabase.rpc("match_book_chunks", {
+    query_embedding: queryVector,
+    match_threshold: 0,
+    match_count: 5,
+    p_user_id: userId,
+    p_filename: book === "all" ? null : book
+});
 
-        if (book === "all") {
-            booksToSearch = Object.keys(vectorIndices[userId] || {});
-        } else {
-            booksToSearch = [book];
-        }
-
-        for (const b of booksToSearch) {
-
-            const vectors = vectorIndices[userId]?.[b];
-            const chunks = documentStore[userId]?.[b]?.childChunks;
-
-            if (!vectors || !chunks) continue;
-
-            vectors.forEach((vecObj,i)=>{
-                const score = cosineSimilarity(queryVector, vecObj.vector);
-                results.push({score,text:chunks[i]});
-            });
-        }
-
-        if (results.length === 0) {
-            return res.json({ quiz:"No study material found." });
-        }
-
-        results.sort((a,b)=>b.score-a.score);
-
-        // Extract raw chunks
-        const rawChunks = results.map(r => r.text);
-
-        // 🔥 Smart rerank
-        let bestChunks;
-
-        if (rawChunks.length > 5) {
-        bestChunks = await rerankChunks(topic, rawChunks);
-    } else {
-        bestChunks = rawChunks;
+if (error) {
+    console.error("Vector search error:", error);
+    return res.json({ quiz: "Search failed. Try again." });
+}
+if (!data || data.length === 0) {
+    return res.json({ quiz: "No study material found." });
 }
 
-        // Build context
-        const context = bestChunks.join("\n\n---\n\n");
+const rawChunks = data.map(row => row.content);
 
+// 🔥 Smart rerank
+let bestChunks;
+
+if (rawChunks.length > 5) {
+    bestChunks = await rerankChunks(topic, rawChunks);
+} else {
+    bestChunks = rawChunks;
+}
+
+// Build context
+const context = bestChunks.join("\n\n---\n\n");
+
+      
         const prompt = `
 Create a **difficult university-level quiz**.
 
@@ -900,27 +876,38 @@ app.post("/chat", async (req, res) => {
         if (!query) return res.status(400).json({ error: "Query is required" });
         if (!books || books.length === 0) return res.status(400).json({ error: "Select at least one book." });
 
+   
         const queryVector = await embedText(query.toLowerCase());
-        let allResults = [];
 
-        for (const book of books) {
-            const vectors = vectorIndices[userId]?.[book];
-            const childChunks = documentStore[userId]?.[book]?.childChunks;
+let allChunks = [];
 
-            if (vectors && childChunks) {
-                vectors.forEach((vecObj, index) => {
-                    if (index < childChunks.length) {
-                        const score = cosineSimilarity(queryVector, vecObj.vector);
-                        allResults.push({ score, text: childChunks[index], book });
-                    }
-                });
-            }
-        }
+// 🔥 Loop through selected books
+for (const book of books) {
 
-        allResults.sort((a, b) => b.score - a.score);
+    const { data, error } = await supabase.rpc("match_book_chunks", {
+        query_embedding: queryVector,
+        match_threshold: 0,
+        match_count: 3,
+        p_user_id: userId,
+        p_filename: book === "all" ? null : book
+    });
+
+    if (error) {
+    console.error("Vector search error:", error);
+    return res.json({ answer: "Search failed. Try again." });
+    }
+
+    if (data && data.length > 0) {
+        allChunks.push(...data.map(row => row.content));
+    }
+}
+
+if (allChunks.length === 0) {
+    return res.json({ answer: "No relevant content found." });
+}
 
         // Extract raw chunks
-        const rawChunks = allResults.map(r => r.text);
+        const rawChunks = allChunks;
 
         // 🔥 Smart rerank (only if needed)
             let bestChunks;
