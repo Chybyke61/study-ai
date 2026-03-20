@@ -15,7 +15,7 @@ const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js');
-const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
@@ -1112,7 +1112,7 @@ app.get("/books", async (req, res) => {
     }
 });
 
-app.delete("/delete-book/:name", async (req, res) => {
+/*app.delete("/delete-book/:name", async (req, res) => {
     const name = decodeURIComponent(req.params.name);
     const userId = req.headers["x-user-id"];
 
@@ -1124,6 +1124,61 @@ app.delete("/delete-book/:name", async (req, res) => {
         return res.json({ success: true });
     }
     res.status(404).json({ error: "Not found" });
+});*/
+
+app.delete("/delete-book/:filename", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const filename = decodeURIComponent(req.params.filename);
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing data" });
+        }
+
+        console.log("🗑️ Deleting:", filename);
+
+        // 🔥 FIND FILE IN R2 (because of timestamp)
+        const list = await r2.send(new ListObjectsV2Command({
+            Bucket: process.env.R2_BUCKET,
+            Prefix: `${userId}/`
+        }));
+
+        const target = list.Contents?.find(obj =>
+            obj.Key.endsWith(filename)
+        );
+
+        if (target) {
+            await r2.send(new DeleteObjectCommand({
+                Bucket: process.env.R2_BUCKET,
+                Key: target.Key
+            }));
+            console.log("✅ Deleted from R2:", target.Key);
+        } else {
+            console.warn("⚠️ File not found in R2");
+        }
+
+        // 🔥 DELETE FROM SUPABASE (chunks)
+        await supabase
+            .from("book_chunks")
+            .delete()
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        // 🔥 DELETE FROM BOOKS TABLE
+        await supabase
+            .from("books")
+            .delete()
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        console.log("✅ Deleted from DB");
+
+        res.json({ success: true });
+
+    } catch (err) {
+        console.error("❌ Delete failed:", err);
+        res.status(500).json({ error: "Delete failed" });
+    }
 });
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
