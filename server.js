@@ -122,7 +122,7 @@ function isLikelyScanned(text) {
 }
 
 async function extractText(file) {
-    const ext = path.extname(file.path).toLowerCase();
+    const ext = path.extname(file.originalname).toLowerCase();
     try {
         // ✅ PDF
         if (ext === ".pdf") {
