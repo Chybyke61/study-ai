@@ -122,7 +122,8 @@ function isLikelyScanned(text) {
 }
 
 async function extractText(file) {
-    const ext = path.extname(file.originalname || file.path).toLowerCase();
+    const fileName = file.originalname || file.filename || file.path || "";
+const ext = path.extname(fileName).toLowerCase();
     try {
         // ✅ PDF
         if (ext === ".pdf") {
@@ -378,12 +379,21 @@ app.post("/upload-stream", upload.single("file"), async (req, res) => {
                 console.log("⚙️ Processing started");
 
                 // Extract text
-                const text = await extractText({ path: tempPath });
+                const text = await extractText({
+                path: tempPath,
+                originalname: file.originalname
+               });
 
                  if (!text || text.length < 50) {
                     console.log("❌ No text extracted");
-                    return;
-                }
+
+                 progressEvents.emit(`update-${userId}`, {
+                    step: "❌ Failed (No text found)",
+                    progress: 100
+                });
+
+                  return;
+                 }
 
 
                 progressEvents.emit(`update-${userId}`, { step: "Extracting...", progress: 30 });
