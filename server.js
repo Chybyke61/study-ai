@@ -5,6 +5,10 @@ const cors = require("cors");
 const EventEmitter = require("events");
 const progressEvents = new EventEmitter();
 const multer = require("multer");
+const upload = multer({
+    dest: "uploads/",
+    limits: { fileSize: 50 * 1024 * 1024 } // 100MB safe
+});
 const fs = require("fs");
 const path = require("path");
 const pdfParse = require("pdf-parse");
@@ -33,7 +37,12 @@ const r2 = new S3Client({
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const app = express();
 
-app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"], allowedHeaders: ["Content-Type", "x-user-id"] }));
+//app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"], allowedHeaders: ["Content-Type", "x-user-id"] }));
+app.use(cors({
+    origin: ["https://studyai-app.vercel.app"],
+    methods: ["GET", "POST", "DELETE"],
+    allowedHeaders: ["Content-Type", "x-user-id"]
+}));
 app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 
@@ -328,6 +337,119 @@ Return ONLY numbers like: 2,5,1,3,0
 }
 
 // --- ROUTES ---
+
+app.post("/upload-stream", upload.single("file"), async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const file = req.file;
+
+        if (!file || !userId) {
+            return res.status(400).json({ error: "Missing file" });
+        }
+
+        console.log("🚀 Upload started");
+
+        const fileKey = `${userId}/${Date.now()}_${file.originalname}`;
+
+        // ✅ STEP 1: STREAM TO R2 (NO RAM SPIKE)
+        const fileStream = fs.createReadStream(file.path);
+
+        await r2.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET,
+            Key: fileKey,
+            Body: fileStream,
+            ContentType: file.mimetype
+        }));
+
+        console.log("✅ Uploaded to R2");
+
+        progressEvents.emit(`update-${userId}`, { step: "Uploading...", progress: 10 });
+
+        // ✅ STEP 2: RESPOND IMMEDIATELY
+        res.json({ success: true });
+
+        // =========================
+        // 🔥 BACKGROUND PROCESSING
+        // =========================
+        setImmediate(async () => {
+            let tempPath = file.path;
+
+            try {
+                console.log("⚙️ Processing started");
+
+                // Extract text
+                const text = await extractText({ path: tempPath });
+
+                 if (!text || text.length < 50) {
+                    console.log("❌ No text extracted");
+                    return;
+                }
+
+
+                progressEvents.emit(`update-${userId}`, { step: "Extracting...", progress: 30 });
+
+                // Chunk
+                const childChunks = recursiveChunk(text, 700, 100);
+                const limitedChunks = childChunks.slice(0, 20);
+
+                progressEvents.emit(`update-${userId}`, { step: "Chunking...", progress: 50 });
+
+                // Embed
+                const insertBatch = [];
+
+              /*  for (let chunk of limitedChunks) {
+                    const vector = await embedText(chunk);
+
+                    insertBatch.push({
+                        user_id: userId,
+                        filename: file.originalname,
+                        content: chunk,
+                        embedding: vector
+                    });
+                } */
+
+                const vectors = await Promise.all(
+                limitedChunks.map(chunk => embedText(chunk))
+                );
+
+                 vectors.forEach((vector, i) => {
+                 insertBatch.push({
+                      user_id: userId,
+                      filename: file.originalname,
+                      content: limitedChunks[i],
+                      embedding: vector
+                    });
+                  });
+
+                progressEvents.emit(`update-${userId}`, { step: "Embedding...", progress: 80 });
+
+                // Save
+                await supabase.from("book_chunks").insert(insertBatch);
+
+                await supabase.from("books").insert([
+                    { user_id: userId, filename: file.originalname }
+                ]);
+
+                progressEvents.emit(`update-${userId}`, { step: "Completed ✅", progress: 100 });
+
+                console.log("✅ Processing complete");
+
+            } catch (err) {
+                console.error("❌ Background processing failed:", err);
+            } finally {
+                // 🧹 DELETE FILE AFTER USE
+                if (fs.existsSync(tempPath)) {
+                    fs.unlinkSync(tempPath);
+                    console.log("🧹 Temp file deleted");
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error("❌ Upload error:", err);
+        res.status(500).json({ error: "Upload failed" });
+    }
+});
 
 app.post("/generate-upload-url", async (req, res) => {
     try {
