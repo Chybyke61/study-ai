@@ -196,7 +196,7 @@ async function addToIndex(userId, filename, children) {
     const vectors = [];
     
     // Strict batch size prevents buffer overflow on constrained hardware
-    const batchSize = 20; 
+    const batchSize = 10; 
 
     children.forEach(chunk => {
     if (!chunk || typeof chunk !== "string") return;
@@ -415,11 +415,11 @@ app.post("/upload", async (req, res) => {
 
         // 3. Chunking
         const parentChunks = recursiveChunk(text, 1500, 200);
-        const childChunks = recursiveChunk(text, 700, 100);
+        const childChunks = recursiveChunk(text, 500, 100);
         progressEvents.emit(`update-${userId}`, { step: "Chunking...", progress: 50 });
 
         // 🚀 LIMIT chunks (IMPORTANT)
-        const MAX_CHUNKS = 20;
+        const MAX_CHUNKS = 50;
         const limitedChunks = childChunks.slice(0, MAX_CHUNKS);
         console.log("STEP 3: Chunks created:", childChunks.length);
 
@@ -432,7 +432,7 @@ app.post("/upload", async (req, res) => {
         // Save chunks to Supabase so they survive redeploy
 console.log(`⚡️ Embedding ${limitedChunks.length} chunks...`);
 
-const batchSize = 20;
+const batchSize = 10;
 const insertBatch = [];
 
 for (let i = 0; i < limitedChunks.length; i += batchSize) {
