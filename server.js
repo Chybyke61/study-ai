@@ -671,7 +671,7 @@ app.post("/notes", async (req, res) => {
   
         const { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
-    match_threshold: 0.4,
+    match_threshold: 0
     match_count: 5,
     p_user_id: userId,
     p_filename: book === "all" ? null : book
@@ -701,33 +701,53 @@ const rawChunks = data.map(row => row.content);
     // Build context
     const context = bestChunks.join("\n\n---\n\n");
 
+const prompt = `
+You are a Distinguished Academic Tutor specializing in synthesizing complex information into high-retention study materials.
 
-        const prompt = `
-Create detailed university-level study notes.
+### TASK:
+Generate comprehensive, university-level study notes based on the provided topic and textbook context.
 
-Instructions:
-- Use textbook context as PRIMARY source
-- You MAY add small external knowledge for clarity
-- Do NOT include unrelated information
-- If topic is unrelated, say:
-  "This topic is not related to your uploaded study material."
+### CORE OPERATING GUIDELINES:
+1. **Primary Source:** Base your notes primarily on the provided textbook context.
+2. **Clarification Layer:** You may integrate general academic knowledge ONLY to clarify terms, explain mechanisms, provide analogies, or improve understanding of concepts already present in the context.
+3. **No Hallucination:** Do NOT introduce concepts, facts, or topics that are not supported by the provided context.
+4. **Relevance Filter:** If the context does not contain relevant information, output EXACTLY:
+"This topic is not related to your uploaded study material."
+5. **Tone:** Maintain a professional, rigorous, and analytical academic tone.
 
-Topic: ${topic}
+---
+
+### NOTE STRUCTURE:
+
+# Topic Overview
+Provide a high-level synthesis and explain its significance.
+
+# Key Definitions
+Define essential terms with nuance and distinctions where relevant.
+
+# Important Concepts
+Break down core ideas. Use **bold** for concept names and explain clearly.
+
+# Mechanisms & Functional Processes
+Describe step-by-step processes using numbered steps. Emphasize cause-and-effect relationships.
+
+# Synthesis Summary (Bullet Points)
+List key takeaways for quick revision.
+
+# Critical Analysis & Exam Tips
+* **Common Pitfalls**
+* **Potential Exam Questions**
+* **Study Strategy (mnemonic or visualization)**
+
+---
+
+Topic:
+${topic}
 
 Textbook Context:
 ${context}
-
-Structure the notes like this:
-
-# Topic Overview
-# Key Definitions
-# Important Concepts
-# Mechanisms or Processes
-# Bullet Point Summary
-# Exam Tips
-
-The notes must be detailed and structured for studying.
 `;
+       
 
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
@@ -781,7 +801,7 @@ The notes must be detailed and structured for studying.
 
 const { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
-    match_threshold: 0.4,
+    match_threshold: 0,
     match_count: 5,
     p_user_id: userId,
     p_filename: book === "all" ? null : book
@@ -814,41 +834,47 @@ const context = bestChunks
     .map(c => c.slice(0, 800))
     .join("\n\n---\n\n");
 
-      
         const prompt = `
-Create a difficult university-level quiz.
-Instructions:
-- Base questions primarily on the textbook context.
-- You MAY use small external knowledge only to improve clarity.
-- Do NOT create questions outside the provided context.
-- If the topic is unrelated to the context, say:
-  "This topic is not related to your uploaded study material."
+You are a Senior Academic Examiner specializing in psychometric assessment design. Your goal is to create a high-discrimination, university-level quiz that tests deep conceptual mastery.
 
+### DESIGN PARAMETERS:
+1. **Cognitive Level:** Target Bloom’s Taxonomy levels of Application, Analysis, and Evaluation. Avoid simple recall questions.
+2. **Primary Source:** Base all questions primarily on the provided textbook context.
+3. **Clarification Allowance:** You may use general academic knowledge ONLY to improve clarity or refine question quality, but do NOT introduce unrelated concepts.
+4. **No Hallucination:** Do NOT create questions from information not supported by the context.
+5. **Relevance Filter:** If the context does not contain sufficient relevant information, output EXACTLY:
+"This topic is not related to your uploaded study material."
+6. **Competitive Distractors:** Ensure all options are plausible and based on common misconceptions or closely related facts.
+7. **Contrastive Explanations:** The explanation MUST justify the correct answer AND explain why at least one strong distractor is incorrect.
 
+---
+
+### QUIZ DATA:
 Topic: ${topic}
 
 Textbook Context:
 ${context}
 
-Requirements:
+---
 
-• 5 multiple choice questions  
-• Each question must have 4 options  
-• Show the correct answer  
-• Provide a short explanation  
+### OUTPUT FORMAT:
+[Generate 5 Questions in the following structure]
 
-Format:
+## Question 1
+**Stem:** [The question text, clearly stated]
+A) [Option]
+B) [Option]
+C) [Option]
+D) [Option]
 
-Question 1  
-A)  
-B)  
-C)  
-D)  
+**Correct Answer:** [Letter]  
+**Academic Rationale:** [A 2–3 sentence explanation focusing on the logical link between the text and the answer, contrasting it against the distractors.]
 
-Correct Answer:  
-Explanation:
+(repeat for all questions)
 `;
 
+      
+        
         const chat = await groq.chat.completions.create({
             messages:[{role:"user",content:prompt}],
             model:"llama-3.1-8b-instant",
