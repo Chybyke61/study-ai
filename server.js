@@ -545,7 +545,7 @@ app.post("/deep-explain", async (req, res) => {
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
             match_threshold: 0,
-            match_count: 5,
+            match_count: 8,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
         });
@@ -583,10 +583,10 @@ if (rawChunks.length > 5) {
 
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-const limitedChunks = bestChunks.slice(0, 3); // reduce from 5 → 3
+const limitedChunks = bestChunks.slice(0, 5); // reduce from 5 → 3
 
 const context = limitedChunks
-    .map(c => c.slice(0, 800)) // limit each chunk
+    .map(c => c.slice(0, 1000)) // limit each chunk
     .join("\n\n---\n\n");
     
 
