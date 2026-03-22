@@ -20,6 +20,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
+const officeParser = require("officeparser");
 const { type } = require("os");
 
 // --- INITIALIZATION ---
@@ -122,6 +123,9 @@ function isLikelyScanned(text) {
 }
 
 async function extractText(file) {
+
+    console.log("File extension detected:", ext);
+    
     const fileName = file.originalname || file.filename || file.path || "";
 const ext = path.extname(fileName).toLowerCase();
     try {
@@ -170,6 +174,37 @@ const ext = path.extname(fileName).toLowerCase();
         }
     } catch (err) {
         console.error("❌ Extraction failed:", err);
+        return "";
+    }
+}
+
+// ======================
+// ✅ PPTX SUPPORT (SAFE)
+// ======================
+if (ext === ".pptx") {
+    try {
+        console.log("📊 Reading PPTX...");
+
+        const text = await officeParser.parseOfficeAsync(file.path);
+
+        console.log("PPTX text length:", text ? text.length : 0);
+
+        // ✅ Validate text
+        if (text && text.trim().length > 50) {
+
+            // 🔥 HARD LIMIT (prevents memory issues)
+            const MAX_TEXT = 50000;
+            const safeText = text.slice(0, MAX_TEXT);
+
+            console.log("✅ PPTX parsed");
+            return safeText;
+        }
+
+        console.warn("⚠️ PPTX empty or unreadable");
+        return "";
+
+    } catch (err) {
+        console.error("❌ PPTX parse failed:", err);
         return "";
     }
 }
