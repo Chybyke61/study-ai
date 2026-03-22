@@ -173,16 +173,11 @@ const ext = path.extname(fileName).toLowerCase();
         console.warn("⚠️ DOCX empty");
         return "";
         }
-    } catch (err) {
-        console.error("❌ Extraction failed:", err);
-        return "";
-    }
 
     // ======================
 // ✅ PPTX SUPPORT (SAFE)
 // ======================
 if (ext === ".pptx") {
-    try {
         console.log("📊 Reading PPTX...");
 
         const text = await officeParser.parseOfficeAsync(file.path);
@@ -203,8 +198,14 @@ if (ext === ".pptx") {
         console.warn("⚠️ PPTX empty or unreadable");
         return "";
 
+    }
+
+    // ✅ ADD THIS HERE
+    console.warn("⚠️ Unsupported file type:", ext);
+    return "";
+
     } catch (err) {
-        console.error("❌ PPTX parse failed:", err);
+        console.error("❌ Extraction failed:", err);
         return "";
     }
 
