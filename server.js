@@ -124,10 +124,11 @@ function isLikelyScanned(text) {
 
 async function extractText(file) {
 
-    console.log("File extension detected:", ext);
     
     const fileName = file.originalname || file.filename || file.path || "";
 const ext = path.extname(fileName).toLowerCase();
+
+    console.log("File extension detected:", ext);
     try {
         // ✅ PDF
         if (ext === ".pdf") {
@@ -176,9 +177,8 @@ const ext = path.extname(fileName).toLowerCase();
         console.error("❌ Extraction failed:", err);
         return "";
     }
-}
 
-// ======================
+    // ======================
 // ✅ PPTX SUPPORT (SAFE)
 // ======================
 if (ext === ".pptx") {
@@ -207,7 +207,9 @@ if (ext === ".pptx") {
         console.error("❌ PPTX parse failed:", err);
         return "";
     }
+
 }
+
 
 function recursiveChunk(text, chunkSize = 1000, overlap = 200) {
     const words = text.split(/\s+/);
