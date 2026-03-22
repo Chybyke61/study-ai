@@ -122,7 +122,7 @@ function isLikelyScanned(text) {
     );
 }
 
-async function extractText(file) {
+/*async function extractText(file) {
 
     
     const fileName = file.originalname || file.filename || file.path || "";
@@ -210,6 +210,95 @@ if (ext === ".pptx") {
         return "";
     }
 
+}*/
+
+async function extractText(file) {
+
+    const fileName = file.originalname || file.filename || file.path || "";
+    const ext = path.extname(fileName).toLowerCase();
+
+    console.log("📁 File:", fileName);
+    console.log("📦 Extension:", ext);
+
+    try {
+
+        // ======================
+        // ✅ PDF
+        // ======================
+        if (ext === ".pdf") {
+            console.log("📄 Parsing PDF...");
+
+            const buffer = fs.readFileSync(file.path);
+            const data = await pdfParse(buffer);
+
+            const text = data.text || "";
+
+            console.log("PDF length:", text.length);
+
+            if (text.trim().length > 20) {
+                return text;
+            }
+
+            console.warn("⚠️ Empty PDF");
+            return "";
+        }
+
+        // ======================
+        // ✅ DOCX
+        // ======================
+        if (ext === ".docx") {
+            console.log("📄 Parsing DOCX...");
+
+            const result = await mammoth.extractRawText({ path: file.path });
+            const text = result.value || "";
+
+            console.log("DOCX length:", text.length);
+
+            if (text.trim().length > 50) {
+                return text;
+            }
+
+            console.warn("⚠️ Empty DOCX");
+            return "";
+        }
+
+        // ======================
+        // ✅ PPTX (SAFE + COMPATIBLE)
+        // ======================
+        if (ext === ".pptx") {
+            console.log("📊 Parsing PPTX...");
+
+            try {
+                const data = await officeParser.parseOffice(file.path);
+
+                // 🔥 universal handling
+                const text = typeof data === "string" ? data : data?.text || "";
+
+                console.log("PPTX length:", text.length);
+
+                if (text.trim().length > 50) {
+                    return text.slice(0, 50000); // 🔥 limit
+                }
+
+                console.warn("⚠️ PPTX has no readable text");
+                return "";
+
+            } catch (err) {
+                console.error("❌ PPTX parse failed:", err.message);
+                return "";
+            }
+        }
+
+        // ======================
+        // ❌ UNSUPPORTED
+        // ======================
+        console.warn("⚠️ Unsupported file type:", ext);
+        return "";
+
+    } catch (err) {
+        console.error("❌ Extraction failed:", err);
+        return "";
+    }
 }
 
 
@@ -423,7 +512,7 @@ app.post("/upload-stream", upload.single("file"), async (req, res) => {
                 originalname: file.originalname
                });
 
-                 if (!text || text.length < 50) {
+              /*   if (!text || text.length < 50) {
                     console.log("❌ No text extracted");
 
                  progressEvents.emit(`update-${userId}`, {
@@ -432,7 +521,32 @@ app.post("/upload-stream", upload.single("file"), async (req, res) => {
                 });
 
                   return;
-                 }
+                 }*/
+
+                if (!text || text.length < 50) {
+
+    console.log("❌ No text extracted");
+
+    const fileName = file.originalname || "";
+    const ext = fileName.toLowerCase().split(".").pop();
+
+    let message = "❌ Failed (No readable text found)";
+
+    if (ext === "pdf") {
+        message = "❌ PDF has no selectable text (scanned file)";
+    } else if (ext === "docx") {
+        message = "❌ DOCX appears empty or unsupported";
+    } else if (ext === "pptx") {
+        message = "❌ PPTX parsing failed — try uploading as PDF";
+    }
+
+    progressEvents.emit(`update-${userId}`, {
+        step: message,
+        progress: 100
+    });
+
+    return;
+                }
 
 
                 progressEvents.emit(`update-${userId}`, { step: "Extracting...", progress: 30 });
