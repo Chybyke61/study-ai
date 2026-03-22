@@ -572,7 +572,10 @@ app.post("/upload", async (req, res) => {
         
         // 2. Extract Text
         console.log("STEP 1: Starting upload");
-        const text = await extractText({ path: tempPath });
+        const text = await extractText({
+        path: tempPath,
+        originalname: filename
+        });
         progressEvents.emit(`update-${userId}`, { step: "Extracting...", progress: 30 });
         console.log("STEP 2: Extracted text length:", text ? text.length : 0);
 
