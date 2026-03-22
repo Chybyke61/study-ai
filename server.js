@@ -180,7 +180,8 @@ const ext = path.extname(fileName).toLowerCase();
 if (ext === ".pptx") {
         console.log("📊 Reading PPTX...");
 
-        const text = await officeParser.parseOfficeAsync(file.path);
+      //  const text = await officeParser.parseOfficeAsync(file.path);
+          const text = await officeParser.parseOffice(file.path);
 
         console.log("PPTX text length:", text ? text.length : 0);
 
