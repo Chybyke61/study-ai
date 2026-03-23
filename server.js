@@ -20,6 +20,9 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
+const { Resend } = require("resend");
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 const { type } = require("os");
 
 // --- INITIALIZATION ---
@@ -96,6 +99,29 @@ function saveCache() {
 })();
 
 // --- HELPER FUNCTIONS ---
+
+async function sendEmail(to, subject, html) {
+    try {
+        const { data, error } = await resend.emails.send({
+            from: "Study.AI <onboarding@resend.dev>",
+            to: [to],
+            subject,
+            html
+        });
+
+        if (error) {
+            console.error("❌ Email error:", error);
+            return false;
+        }
+
+        console.log("✅ Email sent:", data);
+        return true;
+
+    } catch (err) {
+        console.error("❌ Email failed:", err);
+        return false;
+    }
+}
 
 function isGoodText(text) {
     if (!text) return false;
@@ -338,6 +364,26 @@ Return ONLY numbers like: 2,5,1,3,0
 }
 
 // --- ROUTES ---
+
+app.post("/test-email", async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ error: "Email required" });
+    }
+
+    const ok = await sendEmail(
+        email,
+        "Study.AI Test 🚀",
+        "<h2>Your email is working ✅</h2>"
+    );
+
+    if (ok) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Email failed" });
+    }
+});
 
 app.post("/upload-stream", upload.single("file"), async (req, res) => {
     try {
