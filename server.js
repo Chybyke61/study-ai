@@ -21,7 +21,7 @@ const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
 const officeParser = require("officeparser");
-const PPTX2json = require("pptx2json");
+const PPTX2Json = require("pptx2json");
 const { type } = require("os");
 
 // --- INITIALIZATION ---
