@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const otpStore = {}; // temporary storage
 const cors = require("cors");
 const EventEmitter = require("events");
 const progressEvents = new EventEmitter();
@@ -383,6 +384,50 @@ app.post("/test-email", async (req, res) => {
     } else {
         res.status(500).json({ error: "Email failed" });
     }
+});
+
+app.post("/send-otp", async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ error: "Email required" });
+    }
+
+    // 🔢 Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Save OTP
+    otpStore[email] = otp;
+
+    console.log("OTP for", email, ":", otp);
+
+    // Send Email
+    const ok = await sendEmail(
+        email,
+        "Your Study.AI Code 🔐",
+        `<h2>Your OTP is: ${otp}</h2><p>Valid for 5 minutes.</p>`
+    );
+
+    if (ok) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ error: "Failed to send OTP" });
+    }
+});
+
+app.post("/verify-otp", (req, res) => {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+        return res.status(400).json({ error: "Missing data" });
+    }
+
+    if (otpStore[email] === otp) {
+        delete otpStore[email]; // clean up
+        return res.json({ success: true });
+    }
+
+    res.status(401).json({ error: "Invalid OTP" });
 });
 
 app.post("/upload-stream", upload.single("file"), async (req, res) => {
@@ -1228,29 +1273,6 @@ app.delete("/delete-book/:filename", async (req, res) => {
 });
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
-
-
-app.post("/test-email", async (req, res) => {
-    try {
-        const { email } = req.body;
-
-        const { Resend } = require("resend");
-        const resend = new Resend(process.env.RESEND_API_KEY);
-
-        const data = await resend.emails.send({
-            from: "StudyAI <onboarding@resend.dev>",
-            to: email,
-            subject: "Test Email",
-            html: "<h1>✅ Email working!</h1>"
-        });
-
-        res.json({ success: true, data });
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Email failed" });
-    }
-});
 
 app.get("/progress", (req, res) => {
     res.writeHead(200, {
