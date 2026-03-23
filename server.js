@@ -22,6 +22,7 @@ const e = require("express");
 const mammoth = require("mammoth");
 const officeParser = require("officeparser");
 const pptx2json = require("pptx2json");
+const pptxParser = pptx2json.default || pptx2json;
 const { type } = require("os");
 
 // --- INITIALIZATION ---
@@ -124,9 +125,7 @@ function isLikelyScanned(text) {
 }
 
 
-
 async function extractText(file) {
-
     const fileName = file.originalname || file.filename || file.path || "";
     const ext = path.extname(fileName).toLowerCase();
 
@@ -134,181 +133,37 @@ async function extractText(file) {
     console.log("📦 Extension:", ext);
 
     try {
-
-        // ======================
         // ✅ PDF
-        // ======================
         if (ext === ".pdf") {
-            console.log("📄 Parsing PDF...");
-
             const buffer = fs.readFileSync(file.path);
             const data = await pdfParse(buffer);
-
-            const text = data.text || "";
-
-            console.log("PDF length:", text.length);
-
-            if (text.trim().length > 20) return text;
-
-            console.warn("⚠️ Empty PDF");
-            return "";
+            return data.text || "";
         }
 
-        // ======================
         // ✅ DOCX
-        // ======================
         if (ext === ".docx") {
-            console.log("📄 Parsing DOCX...");
-
             const result = await mammoth.extractRawText({ path: file.path });
-            const text = result.value || "";
-
-            console.log("DOCX length:", text.length);
-
-            if (text.trim().length > 50) return text;
-
-            console.warn("⚠️ Empty DOCX");
-            return "";
+            return result.value || "";
         }
 
-        // ======================
-        // ✅ PPTX (FINAL SAFE VERSION)
-        // ======================
-       if (ext === ".pptx") {
-    console.log("📊 Parsing PPTX...");
-
-    let text = "";
-
-    // 🥇 TRY pptx2json (SAFE CALL)
-    try {
-        const parser = pptx2json.default || pptx2json;
-
-        const rawData = await parser(file.path);
-
-        const slides = Array.isArray(rawData)
-            ? rawData
-            : Object.values(rawData || {});
-
-        text = slides
-            .map(slide =>
-                (slide.texts || [])
-                    .map(t => t.text)
-                    .join(" ")
-            )
-            .join("\n");
-
-        console.log("pptx2json length:", text.length);
-
-    } catch (err) {
-        console.warn("⚠️ pptx2json failed:", err.message);
-    }
-
-    // 🥈 FALLBACK → officeparser
-    if (!text || text.trim().length < 50) {
-        try {
-            console.log("🔁 Falling back to officeparser...");
-
-            const data = await officeParser.parseOffice(file.path);
-
-            text = typeof data === "string"
-                ? data
-                : data?.text || "";
-
-            console.log("officeparser length:", text.length);
-
-        } catch (err) {
-            console.error("❌ officeparser failed:", err.message);
-        }
-    }
-
-    // ✅ FINAL VALIDATION
-    if (text && text.trim().length > 50) {
-        console.log("✅ PPTX parsed");
-        return text.slice(0, 50000);
-    }
-
-    console.warn("❌ PPTX unreadable");
-    return "";
-}
-
-        // ======================
-        // ❌ UNSUPPORTED
-        // ======================
-        console.warn("⚠️ Unsupported file type:", ext);
-        return "";
-
-    } catch (err) {
-        console.error("❌ Extraction failed:", err);
-        return "";
-    }
-}
-
-async function extractText(file) {
-
-    const fileName = file.originalname || file.filename || file.path || "";
-    const ext = path.extname(fileName).toLowerCase();
-
-    console.log("📁 File:", fileName);
-    console.log("📦 Extension:", ext);
-
-    try {
-
-        // ======================
-        // ✅ PDF
-        // ======================
-        if (ext === ".pdf") {
-            console.log("📄 Parsing PDF...");
-
-            const buffer = fs.readFileSync(file.path);
-            const data = await pdfParse(buffer);
-
-            const text = data.text || "";
-
-            console.log("PDF length:", text.length);
-
-            if (text.trim().length > 20) return text;
-
-            console.warn("⚠️ Empty PDF");
-            return "";
-        }
-
-        // ======================
-        // ✅ DOCX
-        // ======================
-        if (ext === ".docx") {
-            console.log("📄 Parsing DOCX...");
-
-            const result = await mammoth.extractRawText({ path: file.path });
-            const text = result.value || "";
-
-            console.log("DOCX length:", text.length);
-
-            if (text.trim().length > 50) return text;
-
-            console.warn("⚠️ Empty DOCX");
-            return "";
-        }
-
-        // ======================
-        // ✅ PPTX (FINAL SAFE VERSION)
-        // ======================
+        // ✅ PPTX
         if (ext === ".pptx") {
             console.log("📊 Parsing PPTX...");
 
             let text = "";
 
-            // 🥇 TRY pptx2json FIRST
+            // 🥇 Try pptx2json
             try {
-                const rawData = await pptx2json.parse(file.path);
+                const rawData = await pptxParser(file.path);
 
                 const slides = Array.isArray(rawData)
                     ? rawData
-                    : Object.values(rawData);
+                    : Object.values(rawData || {});
 
                 text = slides
                     .map(slide =>
                         (slide.texts || [])
-                            .map(t => t.text)
+                            .map(t => t.text || "")
                             .join(" ")
                     )
                     .join("\n");
@@ -319,10 +174,10 @@ async function extractText(file) {
                 console.warn("⚠️ pptx2json failed:", err.message);
             }
 
-            // 🥈 FALLBACK: officeparser
+            // 🥈 Fallback → officeparser
             if (!text || text.trim().length < 50) {
                 try {
-                    console.log("🔁 Falling back to officeparser...");
+                    console.log("🔁 fallback → officeparser");
 
                     const data = await officeParser.parseOffice(file.path);
 
@@ -330,260 +185,18 @@ async function extractText(file) {
                         ? data
                         : data?.text || "";
 
-                    console.log("officeparser length:", text.length);
-
                 } catch (err) {
                     console.error("❌ officeparser failed:", err.message);
                 }
             }
 
-            // ✅ FINAL CHECK
             if (text && text.trim().length > 50) {
-                console.log("✅ PPTX parsed successfully");
                 return text.slice(0, 50000);
             }
 
-            console.warn("❌ PPTX unreadable");
             return "";
         }
 
-        // ======================
-        // ❌ UNSUPPORTED
-        // ======================
-        console.warn("⚠️ Unsupported file type:", ext);
-        return "";
-
-    } catch (err) {
-        console.error("❌ Extraction failed:", err);
-        return "";
-    }
-}
-
-/*async function extractText(file) {
-
-    const fileName = file.originalname || file.filename || file.path || "";
-    const ext = path.extname(fileName).toLowerCase();
-
-    console.log("📁 File:", fileName);
-    console.log("📦 Extension:", ext);
-
-    try {
-
-        // ======================
-        // ✅ PDF
-        // ======================
-        if (ext === ".pdf") {
-            console.log("📄 Parsing PDF...");
-
-            const buffer = fs.readFileSync(file.path);
-            const data = await pdfParse(buffer);
-
-            const text = data.text || "";
-
-            console.log("PDF length:", text.length);
-
-            if (text.trim().length > 20) {
-                return text;
-            }
-
-            console.warn("⚠️ Empty PDF");
-            return "";
-        }
-
-        // ======================
-        // ✅ DOCX
-        // ======================
-        if (ext === ".docx") {
-            console.log("📄 Parsing DOCX...");
-
-            const result = await mammoth.extractRawText({ path: file.path });
-            const text = result.value || "";
-
-            console.log("DOCX length:", text.length);
-
-            if (text.trim().length > 50) {
-                return text;
-            }
-
-            console.warn("⚠️ Empty DOCX");
-            return "";
-        }
-
-        // ======================
-        // ✅ PPTX (FIXED + FALLBACK)
-        // ======================
-        if (ext === ".pptx") {
-            console.log("📊 Parsing PPTX...");
-
-            // 🔥 TRY NEW PARSER FIRST
-            try {
-                const slides = await pptxParser.parse(file.path);
-
-                let text = "";
-
-                slides.forEach(slide => {
-                    if (slide.text) {
-                        text += slide.text + "\n";
-                    }
-                });
-
-                console.log("PPTX (pptx-parser) length:", text.length);
-
-                if (text.trim().length > 50) {
-                    console.log("✅ Parsed with pptx-parser");
-                    return text.slice(0, 50000);
-                }
-
-                throw new Error("pptx-parser returned empty");
-
-            } catch (err1) {
-                console.warn("⚠️ pptx-parser failed:", err1.message);
-
-                // 🔥 FALLBACK TO OFFICEPARSER
-                try {
-                    const data = await officeParser.parseOffice(file.path);
-
-                    const text = typeof data === "string"
-                        ? data
-                        : data?.text || "";
-
-                    console.log("PPTX (officeparser) length:", text.length);
-
-                    if (text.trim().length > 50) {
-                        console.log("✅ Parsed with officeparser");
-                        return text.slice(0, 50000);
-                    }
-
-                    console.warn("⚠️ officeparser also failed");
-                    return "";
-
-                } catch (err2) {
-                    console.error("❌ All PPTX parsers failed:", err2.message);
-                    return "";
-                }
-            }
-        }
-
-        // ======================
-        // ❌ UNSUPPORTED
-        // ======================
-        console.warn("⚠️ Unsupported file type:", ext);
-        return "";
-
-    } catch (err) {
-        console.error("❌ Extraction failed:", err);
-        return "";
-    }
-}
-*/
-async function extractText(file) {
-
-    const fileName = file.originalname || file.filename || file.path || "";
-    const ext = path.extname(fileName).toLowerCase();
-
-    console.log("📁 File:", fileName);
-    console.log("📦 Extension:", ext);
-
-    try {
-
-        // ======================
-        // ✅ PDF
-        // ======================
-        if (ext === ".pdf") {
-            console.log("📄 Parsing PDF...");
-
-            const buffer = fs.readFileSync(file.path);
-            const data = await pdfParse(buffer);
-
-            const text = data.text || "";
-
-            console.log("PDF length:", text.length);
-
-            if (text.trim().length > 20) return text;
-
-            console.warn("⚠️ Empty PDF");
-            return "";
-        }
-
-        // ======================
-        // ✅ DOCX
-        // ======================
-        if (ext === ".docx") {
-            console.log("📄 Parsing DOCX...");
-
-            const result = await mammoth.extractRawText({ path: file.path });
-            const text = result.value || "";
-
-            console.log("DOCX length:", text.length);
-
-            if (text.trim().length > 50) return text;
-
-            console.warn("⚠️ Empty DOCX");
-            return "";
-        }
-
-        // ======================
-        // ✅ PPTX (FINAL SAFE VERSION)
-        // ======================
-        if (ext === ".pptx") {
-            console.log("📊 Parsing PPTX...");
-
-            let text = "";
-
-            // 🥇 TRY pptx2json FIRST
-            try {
-                const rawData = await pptx2json.parse(file.path);
-
-                const slides = Array.isArray(rawData)
-                    ? rawData
-                    : Object.values(rawData);
-
-                text = slides
-                    .map(slide =>
-                        (slide.texts || [])
-                            .map(t => t.text)
-                            .join(" ")
-                    )
-                    .join("\n");
-
-                console.log("pptx2json length:", text.length);
-
-            } catch (err) {
-                console.warn("⚠️ pptx2json failed:", err.message);
-            }
-
-            // 🥈 FALLBACK: officeparser
-            if (!text || text.trim().length < 50) {
-                try {
-                    console.log("🔁 Falling back to officeparser...");
-
-                    const data = await officeParser.parseOffice(file.path);
-
-                    text = typeof data === "string"
-                        ? data
-                        : data?.text || "";
-
-                    console.log("officeparser length:", text.length);
-
-                } catch (err) {
-                    console.error("❌ officeparser failed:", err.message);
-                }
-            }
-
-            // ✅ FINAL CHECK
-            if (text && text.trim().length > 50) {
-                console.log("✅ PPTX parsed successfully");
-                return text.slice(0, 50000);
-            }
-
-            console.warn("❌ PPTX unreadable");
-            return "";
-        }
-
-        // ======================
-        // ❌ UNSUPPORTED
-        // ======================
-        console.warn("⚠️ Unsupported file type:", ext);
         return "";
 
     } catch (err) {
