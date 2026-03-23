@@ -1032,6 +1032,70 @@ D) [Option]
     }
 });
 
+// ==============================
+// 🧠 FLASHCARDS GENERATOR
+// ==============================
+app.post("/flashcards", async (req, res) => {
+    try {
+        const { topic, level, book } = req.body;
+        const userId = req.headers["x-user-id"];
+
+        if (!topic) {
+            return res.status(400).json({ error: "Topic required" });
+        }
+
+        // 🔍 GET RELEVANT CHUNKS (same system as quiz)
+        const queryVector = await embedText(topic.toLowerCase());
+
+        const { data, error } = await supabase.rpc("match_book_chunks", {
+            query_embedding: queryVector,
+            match_threshold: 0,
+            match_count: 5,
+            p_user_id: userId,
+            p_filename: book === "all" ? null : book
+        });
+
+        if (error || !data || data.length === 0) {
+            return res.json({
+                flashcards: "No relevant study material found."
+            });
+        }
+
+        // 🔥 LIMIT CONTEXT (VERY IMPORTANT FOR RAM)
+        const context = data
+            .slice(0, 3)
+            .map(row => row.content.slice(0, 500))
+            .join("\n\n");
+
+        const prompt = `
+You are a study assistant.
+
+Create 5 flashcards from the material below.
+
+Format strictly as:
+Q: ...
+A: ...
+
+Material:
+${context}
+`;
+
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.3
+        });
+
+        const output = chat.choices[0].message.content;
+
+        res.json({ flashcards: output });
+
+    } catch (err) {
+        console.error("Flashcards error:", err);
+        res.status(500).json({ error: "Flashcards failed" });
+    }
+});
+
 app.post("/chat", async (req, res) => {
     try {
         const { query, history = [], books = [] } = req.body;
