@@ -148,55 +148,63 @@ async function extractText(file) {
 
         // ✅ PPTX
         if (ext === ".pptx") {
-            console.log("📊 Parsing PPTX...");
+    console.log("📊 Parsing PPTX...");
 
-            let text = "";
+    let text = "";
 
-            // 🥇 Try pptx2json
-            try {
-                const rawData = await pptxParser(file.path);
+    // 🥇 FIXED pptx2json (CORRECT USAGE)
+    try {
+        const parser = new PPTX2Json();
 
-                const slides = Array.isArray(rawData)
-                    ? rawData
-                    : Object.values(rawData || {});
+        const rawData = await parser.parse(file.path);
 
-                text = slides
-                    .map(slide =>
-                        (slide.texts || [])
-                            .map(t => t.text || "")
-                            .join(" ")
-                    )
-                    .join("\n");
+        const slides = Array.isArray(rawData)
+            ? rawData
+            : Object.values(rawData || {});
 
-                console.log("pptx2json length:", text.length);
+        text = slides
+            .map(slide =>
+                (slide.texts || [])
+                    .map(t => t.text || "")
+                    .join(" ")
+            )
+            .join("\n");
 
-            } catch (err) {
-                console.warn("⚠️ pptx2json failed:", err.message);
-            }
+        console.log("pptx2json length:", text.length);
 
-            // 🥈 Fallback → officeparser
-            if (!text || text.trim().length < 50) {
-                try {
-                    console.log("🔁 fallback → officeparser");
+    } catch (err) {
+        console.warn("⚠️ pptx2json failed:", err.message);
+    }
 
-                    const data = await officeParser.parseOffice(file.path);
+    // 🥈 fallback → officeparser
+    if (!text || text.trim().length < 50) {
+        try {
+            console.log("🔁 fallback → officeparser");
 
-                    text = typeof data === "string"
-                        ? data
-                        : data?.text || "";
+            const data = await officeParser.parseOffice(file.path);
 
-                } catch (err) {
-                    console.error("❌ officeparser failed:", err.message);
-                }
-            }
+            text = typeof data === "string"
+                ? data
+                : data?.text || "";
 
-            if (text && text.trim().length > 50) {
-                return text.slice(0, 50000);
-            }
-
-            return "";
+        } catch (err) {
+            console.error("❌ officeparser failed:", err.message);
         }
+    }
 
+    if (text && text.trim().length > 50) {
+        console.log("✅ PPTX parsed");
+        return text.slice(0, 50000);
+    }
+
+    console.warn("❌ PPTX unreadable");
+    return "";
+}
+
+        // ======================
+        // ❌ OTHER FILES
+        // ======================
+        console.warn("⚠️ Unsupported file type:", ext);
         return "";
 
     } catch (err) {
