@@ -151,11 +151,16 @@ async function extractText(file) {
 
     let text = "";
 
-    // 🥇 FIXED pptx2json (CORRECT USAGE)
+    // 🥇 TRY pptx2json (CORRECT USAGE)
     try {
         const parser = new PPTX2Json();
 
-        const rawData = await parser.parse(file.path);
+        const rawData = await new Promise((resolve, reject) => {
+            parser.toJson(file.path, (err, data) => {
+                if (err) return reject(err);
+                resolve(data);
+            });
+        });
 
         const slides = Array.isArray(rawData)
             ? rawData
@@ -169,16 +174,16 @@ async function extractText(file) {
             )
             .join("\n");
 
-        console.log("pptx2json length:", text.length);
+        console.log("✅ pptx2json length:", text.length);
 
     } catch (err) {
         console.warn("⚠️ pptx2json failed:", err.message);
     }
 
-    // 🥈 fallback → officeparser
+    // 🥈 FALLBACK → officeparser
     if (!text || text.trim().length < 50) {
         try {
-            console.log("🔁 fallback → officeparser");
+            console.log("🔁 Falling back to officeparser...");
 
             const data = await officeParser.parseOffice(file.path);
 
@@ -199,7 +204,6 @@ async function extractText(file) {
     console.warn("❌ PPTX unreadable");
     return "";
 }
-
         // ======================
         // ❌ OTHER FILES
         // ======================
