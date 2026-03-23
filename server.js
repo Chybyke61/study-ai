@@ -1229,6 +1229,29 @@ app.delete("/delete-book/:filename", async (req, res) => {
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
+
+app.post("/test-email", async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const { Resend } = require("resend");
+        const resend = new Resend(process.env.RESEND_API_KEY);
+
+        const data = await resend.emails.send({
+            from: "StudyAI <onboarding@resend.dev>",
+            to: email,
+            subject: "Test Email",
+            html: "<h1>✅ Email working!</h1>"
+        });
+
+        res.json({ success: true, data });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Email failed" });
+    }
+});
+
 app.get("/progress", (req, res) => {
     res.writeHead(200, {
         "Content-Type": "text/event-stream",
