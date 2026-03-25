@@ -686,7 +686,7 @@ app.post("/deep-explain", async (req, res) => {
 // 🔥 Filter weak matches (simulate scoreThreshold)
 const vectorContext = data
     ? data
-        .filter(row => row.similarity > 0.65) // 🔥 KEY LINE
+        .filter(row => row.similarity > 0.3) // 🔥 KEY LINE
         .map(row => row.content)
     : [];
         
