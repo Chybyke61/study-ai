@@ -683,7 +683,13 @@ app.post("/deep-explain", async (req, res) => {
         });
 
         
-const vectorContext = data ? data.map(row => row.content) : [];
+// 🔥 Filter weak matches (simulate scoreThreshold)
+const vectorContext = data
+    ? data
+        .filter(row => row.similarity > 0.65) // 🔥 KEY LINE
+        .map(row => row.content)
+    : [];
+        
   const combinedContext = vectorContext;
 
         console.log("Vector search results:", data);
