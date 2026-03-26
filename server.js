@@ -379,23 +379,38 @@ Return ONLY the improved query.
 }
 
 
+/**
+ * Analyzes user intent using Llama 3 via Groq.
+ * Improvements: Added timeout, HTTP error handling, and robust JSON extraction.
+ */
 async function analyzeIntent(query) {
+    const API_URL = "https://api.groq.com/openai/v1/chat/completions";
+    const MODEL = "llama3-70b-8192";
+    
+    // Default fallback object
+    const fallback = { intent: "explain", query: query };
+
     try {
-        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+        const response = await fetch(API_URL, {
             method: "POST",
+            signal: controller.signal,
             headers: {
                 "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "llama3-70b-8192",
+                model: MODEL,
                 messages: [
                     {
                         role: "system",
-                        content: `
-Classify the user request.
 
-Return JSON only:
+                        content: `
+You are an AI that classifies academic user intent.
+
+Return ONLY JSON:
 
 {
   "intent": "explain | summary | notes | quiz | abstract",
@@ -403,34 +418,82 @@ Return JSON only:
 }
 
 Rules:
-- "summary" → summarize book/text
-- "abstract" → high-level conceptual explanation
-- "explain" → deep explanation
-- "notes" → key points
-- "quiz" → questions
+- "summary" → user wants overview of entire material
+- "abstract" → user asks for idea, concept, intuition, big picture
+- "explain" → detailed explanation of a topic
+- "notes" → key points / bullet summary
+- "quiz" → questions/testing
 
-Make the query more academic and detailed.
+IMPORTANT:
+- Rewrite vague queries into clear academic search queries
+- If user says "this book" → assume full document context
+- Keep query meaningful for retrieval
 `
+                        
                     },
-                    {
-                        role: "user",
-                        content: query
-                    }
-                ]
+                    { role: "user", content: query }
+                ],
+                temperature: 0.1, // Lower temperature for more consistent JSON
+                response_format: { type: "json_object" } // Groq supports JSON mode
             })
         });
 
-        const data = await res.json();
-        return JSON.parse(data.choices[0].message.content);
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Groq API error: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+
+        if (!content) return fallback;
+
+        // 🔥 ROBUST PARSING: Handles potential markdown backticks or whitespace
+        try {
+            const cleanedContent = content.replace(/```json|```/g, "").trim();
+            const parsed = JSON.parse(cleanedContent);
+
+            // 🔥 Manual boost for abstract questions
+const lower = query.toLowerCase();
+
+if (
+    lower.includes("idea") ||
+    lower.includes("concept") ||
+    lower.includes("meaning") ||
+    lower.includes("intuition") ||
+    lower.includes("what is the idea behind")
+) {
+    parsed.intent = "abstract";
+}
+            
+            return {
+    intent: parsed.intent || fallback.intent,
+    query: (parsed.query && parsed.query.length > 10)
+        ? parsed.query
+        : query + " key concepts explanation"
+};
+            
+        } catch (parseError) {
+            console.warn("JSON Parse failed. Content was:", content);
+            return fallback;
+        }
+
+        if (query.split(" ").length < 4) {
+    parsed.query = query + " detailed explanation with examples";
+        }
 
     } catch (err) {
-        console.error("Intent error:", err);
-        return {
-            intent: "explain",
-            query: query
-        };
+        if (err.name === 'AbortError') {
+            console.error("Intent analysis timed out");
+        } else {
+            console.error("Intent analysis error:", err.message);
+        }
+        return fallback;
     }
 }
+
 
 // --- ROUTES ---
 
