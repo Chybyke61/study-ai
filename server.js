@@ -13,6 +13,8 @@ const fs = require("fs");
 const path = require("path");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
@@ -119,6 +121,23 @@ function isLikelyScanned(text) {
         clean.length < 50 ||
         !/[a-zA-Z]{3,}/.test(clean)
     );
+}
+
+async function geminiGenerate(prompt) {
+    try {
+        const model = genAI.getGenerativeModel({
+            model: "gemini-1.5-flash"
+        });
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+
+        return response.text();
+
+    } catch (err) {
+        console.error("Gemini failed:", err);
+        throw err;
+    }
 }
 
 async function extractText(file) {
@@ -1045,14 +1064,28 @@ ${topic}
 Provide a structured explanation using headings and detailed paragraphs.
 `;
 
-        const chat = await groq.chat.completions.create({
-            messages: [{ role:"user", content:prompt }],
-            model: "llama-3.1-8b-instant",
-            temperature: 0.2,
-            max_tokens: 1500
-        });
+        let output;
 
-        const output = chat.choices[0].message.content;
+try {
+    const chat = await groq.chat.completions.create({
+        messages: [{ role:"user", content:prompt }],
+        model: "llama-3.1-8b-instant",
+        temperature: 0.2,
+        max_tokens: 1500
+    });
+
+    output = chat.choices[0].message.content;
+
+} catch (err) {
+
+    console.warn("⚠️ Groq failed, switching to Gemini");
+
+    if (err.message && err.message.includes("rate_limit")) {
+        output = await geminiGenerate(prompt);
+    } else {
+        throw err;
+    }
+}
 
         // 💾 SAVE TO CACHE
         await supabase.from("ai_cache").insert({
