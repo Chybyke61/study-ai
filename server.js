@@ -378,8 +378,21 @@ if (!content) {
     return topic;
 }
 
-return content.trim();
+const cleaned = content.trim();
 
+// 🔥 BLOCK BAD AI RESPONSES
+if (
+    cleaned.toLowerCase().includes("there is no") ||
+    cleaned.toLowerCase().includes("i need you to") ||
+    cleaned.length > 200
+) {
+    console.warn("⚠️ Bad rewrite detected, fallback used");
+    return topic;
+}
+
+return cleaned;
+
+        
     } catch (err) {
         console.error("Rewrite failed:", err);
         return topic;
@@ -857,12 +870,22 @@ const intent = analysis.intent;
 const improvedQuery = analysis.query;
         
 // 🔥 Expand query for better understanding
-const expandedQuery = await rewriteQuery(improvedQuery);
+let expandedQuery = await rewriteQuery(improvedQuery);
+
+// 🔥 PREVENT GENERIC / USELESS QUERIES
+if (
+    expandedQuery.toLowerCase().includes("provided text") ||
+    expandedQuery.toLowerCase().includes("academic summary")
+) {
+    console.warn("⚠️ Generic query detected, reverting");
+    expandedQuery = topic;
+}
+
 let searchQuery = expandedQuery;
 
 // 🔥 SMART MODES
 if (intent === "summary") {
-    searchQuery = "main ideas key concepts overview summary of entire document";
+    searchQuery = topic + " main ideas key concepts important points summary";
 }
 
 if (intent === "abstract") {
@@ -931,13 +954,31 @@ console.log("Combined results:", combinedContext.length);
 
         if (error) {
     console.error("Vector search error:", error);
-}
-        if (!data || data.length === 0) {
-    return res.json({
-        explanation: "This topic is not related to your uploaded materials."
-    });
         }
 
+if (!data || data.length === 0) {
+    console.warn("⚠️ No vector matches, retrying with raw topic");
+
+    const fallbackVector = await embedText(topic.toLowerCase());
+
+    const fallbackSearch = await supabase.rpc("match_book_chunks", {
+        query_embedding: fallbackVector,
+        match_threshold: 0.1,
+        match_count: 5,
+        p_user_id: userId,
+        p_filename: book === "all" ? null : book
+    });
+
+    if (!fallbackSearch.data || fallbackSearch.data.length === 0) {
+        return res.json({
+            explanation: "This topic is not related to your uploaded materials."
+        });
+    }
+
+    data = fallbackSearch.data;
+}
+
+        
 // Extract raw chunks
 const rawChunks = combinedContext;
 
@@ -952,7 +993,12 @@ if (rawChunks.length > 5) {
 
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
-const limitedChunks = bestChunks.slice(0, 6); // ❗❗ balanced
+let limit = 6;
+
+if (intent === "summary") limit = 10;
+if (intent === "abstract") limit = 8;
+
+const limitedChunks = bestChunks.slice(0, limit);
 
 const context = limitedChunks
     .map(c => c.slice(0, 1000)) // limit each chunk
