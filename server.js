@@ -337,6 +337,47 @@ Return ONLY numbers like: 2,5,1,3,0
     }
 }
 
+async function rewriteQuery(topic) {
+    try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "llama3-70b-8192",
+                messages: [
+                    {
+                        role: "system",
+                        content: `
+Rewrite the user's topic into a detailed academic search query.
+
+Make it:
+- specific
+- concept-rich
+- include key terms
+
+Return ONLY the improved query.
+`
+                    },
+                    {
+                        role: "user",
+                        content: topic
+                    }
+                ]
+            })
+        });
+
+        const data = await res.json();
+        return data.choices[0].message.content.trim();
+
+    } catch (err) {
+        console.error("Rewrite failed:", err);
+        return topic;
+    }
+}
+
 // --- ROUTES ---
 
 app.post("/upload-stream", upload.single("file"), async (req, res) => {
@@ -671,8 +712,17 @@ app.post("/deep-explain", async (req, res) => {
             return res.status(400).json({ error: "Topic required" });
         }
 
-        const queryVector = await embedText(topic.toLowerCase());
+        // 🧠 Step 1: Improve the question
+const improvedQuery = await rewriteQuery(topic);
 
+// 🧠 Step 2: Convert to embedding
+const queryVector = await embedText(improvedQuery.toLowerCase());
+
+// 🔍 Debug (very important)
+console.log("Original:", topic);
+console.log("Improved:", improvedQuery);
+
+        
             const { data, error } = await 
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
@@ -748,8 +798,8 @@ You are an elite university-level academic tutor. Your primary objective is to f
 * Skip Pleasantries: Do NOT greet the user. Begin immediately with the academic explanation.
 * Primary Grounding: Base your response primarily on the provided textbook context.
 * Supplemental Knowledge: You may use general academic knowledge ONLY to clarify, expand, or simplify concepts already present in the context. Do NOT introduce unrelated topics.
-* Out-of-Scope Handling:If the context does not contain relevant information, respond EXACTLY with:
-"This topic is not related to your uploaded study material."
+* You must answer ONLY using the provided study material.
+* If the answer is not in the material, say: "Not found in your uploaded documents."
 * Do not hallucinate: Answer only with provided text 
 
 ### PEDAGOGICAL APPROACH
