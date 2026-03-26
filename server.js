@@ -558,7 +558,9 @@ return {
     intent: parsed.intent || fallback.intent,
     query: finalQuery
 };
-
+        
+// 🔥 Add domain context
+parsed.query += " academic explanation key concepts examples";
 
     } catch (err) {
         if (err.name === 'AbortError') {
@@ -1043,12 +1045,33 @@ if (intent === "abstract") limit = 8;
 const limitedChunks = bestChunks.slice(0, limit);
 
 const context = limitedChunks
-    .map(c => c.slice(0, 1000)) // limit each chunk
+    .filter(c => c && c.length > 100)
+    .map(c => c.slice(0, 800))
     .join("\n\n---\n\n");
-    
+        
+   let modeInstruction = "";
+
+if (intent === "summary") {
+    modeInstruction = "Provide a structured summary with headings and key points.";
+}
+
+if (intent === "abstract") {
+    modeInstruction = "Start with intuition and big picture before technical details.";
+}
+
+if (intent === "notes") {
+    modeInstruction = "Provide bullet-point notes with key concepts.";
+}
+
+if (intent === "quiz") {
+    modeInstruction = "Generate challenging conceptual questions.";
+} 
 
  const prompt = `
 You are an elite university-level academic tutor. Your primary objective is to facilitate deep conceptual mastery of the provided study material.
+
+### SPECIAL INSTRUCTION:
+${modeInstruction}
 
 ### CORE DIRECTIVES
 - Skip Pleasantries: Do NOT greet the user. Begin immediately with the academic explanation.
@@ -1067,10 +1090,19 @@ You are an elite university-level academic tutor. Your primary objective is to f
 - If intent = "abstract": explain concept at high-level (big picture, intuition first)
 - If intent = "explain": deep technical breakdown
 
+### THINKING STRATEGY:
+1. Identify key concepts in the context
+2. Explain relationships between them
+3. Build explanation step-by-step
+4. Conclude with integrated understanding
+
 ### RULES:
 - Use ONLY provided context
 - Do NOT hallucinate
-- If not found: "Not found in your uploaded documents"
+- If information is missing, explicitly say:
+  "Not found in your uploaded documents"
+- Do not guess or invent facts
+
 
 
 ### FORMATTING REQUIREMENTS
