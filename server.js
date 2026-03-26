@@ -684,11 +684,24 @@ app.post("/deep-explain", async (req, res) => {
 
         
 // 🔥 Filter weak matches (simulate scoreThreshold)
-const vectorContext = data
-    ? data
-        .filter(row => row.similarity > 0.3) // 🔥 KEY LINE
-        .map(row => row.content)
-    : [];
+let vectorContext = [];
+
+if (data && data.length > 0) {
+
+    // ✅ Sort by best similarity first
+    const sorted = data.sort((a, b) => b.similarity - a.similarity);
+
+    // ✅ Always take top results
+    const topK = sorted.slice(0, 5);
+
+    // ✅ Only filter if strong matches exist
+    const strongMatches = topK.filter(row => row.similarity > 0.3);
+
+    const finalChunks = strongMatches.length > 0 ? strongMatches : topK;
+
+    vectorContext = finalChunks.map(row => row.content);
+}
+        
         
   const combinedContext = vectorContext;
 
