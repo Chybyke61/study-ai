@@ -378,6 +378,60 @@ Return ONLY the improved query.
     }
 }
 
+
+async function analyzeIntent(query) {
+    try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "llama3-70b-8192",
+                messages: [
+                    {
+                        role: "system",
+                        content: `
+Classify the user request.
+
+Return JSON only:
+
+{
+  "intent": "explain | summary | notes | quiz | abstract",
+  "query": "improved academic query"
+}
+
+Rules:
+- "summary" → summarize book/text
+- "abstract" → high-level conceptual explanation
+- "explain" → deep explanation
+- "notes" → key points
+- "quiz" → questions
+
+Make the query more academic and detailed.
+`
+                    },
+                    {
+                        role: "user",
+                        content: query
+                    }
+                ]
+            })
+        });
+
+        const data = await res.json();
+        return JSON.parse(data.choices[0].message.content);
+
+    } catch (err) {
+        console.error("Intent error:", err);
+        return {
+            intent: "explain",
+            query: query
+        };
+    }
+}
+
 // --- ROUTES ---
 
 app.post("/upload-stream", upload.single("file"), async (req, res) => {
@@ -712,15 +766,17 @@ app.post("/deep-explain", async (req, res) => {
             return res.status(400).json({ error: "Topic required" });
         }
 
-        // 🧠 Step 1: Improve the question
-const improvedQuery = await rewriteQuery(topic);
+        // 🧠 Step 1: Understand intent
+const analysis = await analyzeIntent(topic);
 
-// 🧠 Step 2: Convert to embedding
-const queryVector = await embedText(improvedQuery.toLowerCase());
+const intent = analysis.intent;
+const improvedQuery = analysis.query;
 
-// 🔍 Debug (very important)
-console.log("Original:", topic);
+console.log("Intent:", intent);
 console.log("Improved:", improvedQuery);
+
+// 🧠 Step 2: Embed smarter query
+const queryVector = await embedText(improvedQuery.toLowerCase());
 
         
             const { data, error } = await 
@@ -742,10 +798,18 @@ if (data && data.length > 0) {
     const sorted = data.sort((a, b) => b.similarity - a.similarity);
 
     // ✅ Always take top results
-    const topK = sorted.slice(0, 5);
+    let limit = 5;
+
+if (intent === "summary") limit = 12;
+if (intent === "abstract") limit = 10;
+if (intent === "notes") limit = 8;
+
+const topK = sorted.slice(0, limit);
 
     // ✅ Only filter if strong matches exist
-    const strongMatches = topK.filter(row => row.similarity > 0.3);
+    const threshold = intent === "abstract" ? 0.2 : 0.3;
+
+const strongMatches = topK.filter(row => row.similarity > threshold);
 
     const finalChunks = strongMatches.length > 0 ? strongMatches : topK;
 
@@ -795,23 +859,32 @@ const context = limitedChunks
 You are an elite university-level academic tutor. Your primary objective is to facilitate deep conceptual mastery of the provided study material.
 
 ### CORE DIRECTIVES
-* Skip Pleasantries: Do NOT greet the user. Begin immediately with the academic explanation.
-* Primary Grounding: Base your response primarily on the provided textbook context.
-* Supplemental Knowledge: You may use general academic knowledge ONLY to clarify, expand, or simplify concepts already present in the context. Do NOT introduce unrelated topics.
-* You must answer ONLY using the provided study material.
-* If the answer is not in the material, say: "Not found in your uploaded documents."
-* Do not hallucinate: Answer only with provided text 
+- Skip Pleasantries: Do NOT greet the user. Begin immediately with the academic explanation.
+- Primary Grounding: Base your response primarily on the provided textbook context.
+- Supplemental Knowledge: You may use general academic knowledge ONLY to clarify, expand, or simplify concepts already present in the context. Do NOT introduce unrelated topics.
+- You must answer ONLY using the provided study material.
 
 ### PEDAGOGICAL APPROACH
-* Deep Synthesis: Do not summarize. Break down mechanisms, processes, and cause-effect relationships step by step.
-* Academic Rigor: Use precise university-level terminology, but explain clearly.
-* Integrated Definitions: Define complex terms naturally within explanations (no separate definition section).
-* Explain thoroughly 
+- Deep Synthesis: Do not summarize. Break down mechanisms, processes, and cause-effect relationships step by step.
+- Academic Rigor: Use precise university-level terminology, but explain clearly.
+- Integrated Definitions: Define complex terms naturally within explanations (no separate definition section).
+- Explain thoroughly 
+
+### SPECIAL MODES:
+- If intent = "summary": give a concise structured overview
+- If intent = "abstract": explain concept at high-level (big picture, intuition first)
+- If intent = "explain": deep technical breakdown
+
+### RULES:
+- Use ONLY provided context
+- Do NOT hallucinate
+- If not found: "Not found in your uploaded documents"
+
 
 ### FORMATTING REQUIREMENTS
-* Use clear headings for major concepts
-* Bold key academic terms on first use
-* Provide detailed, well-structured explanations (avoid short answers)
+- Use clear headings for major concepts
+- Bold key academic terms on first use
+- Provide detailed, well-structured explanations (avoid short answers)
 
 Textbook Context:
 ${context}
