@@ -140,6 +140,21 @@ async function geminiGenerate(prompt) {
     }
 }
 
+async function safeGenerate(prompt) {
+    try {
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.1-8b-instant"
+        });
+
+        return chat.choices[0].message.content;
+
+    } catch (err) {
+        console.warn("⚠️ Groq failed → Gemini fallback");
+        return await geminiGenerate(prompt);
+    }
+}
+
 async function extractText(file) {
     const fileName = file.originalname || file.filename || file.path || "";
 const ext = path.extname(fileName).toLowerCase();
@@ -336,13 +351,21 @@ ${limitedChunks.map((c, i) => `[${i}] ${c}`).join("\n\n")}
 Return ONLY numbers like: 2,5,1,3,0
 `;
 
-        const response = await groq.chat.completions.create({
-            model: "llama-3.1-8b-instant",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0
-        });
+        let text;
 
-        const text = response.choices[0].message.content;
+try {
+    const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0
+    });
+
+    text = response.choices[0].message.content;
+
+} catch (err) {
+    console.warn("⚠️ Rerank fallback → Gemini");
+    text = await geminiGenerate(prompt);
+}
 
         const indices = text.match(/\d+/g)?.map(Number) || [];
 
@@ -1080,10 +1103,14 @@ try {
 
     console.warn("⚠️ Groq failed, switching to Gemini");
 
-    if (err.message && err.message.includes("rate_limit")) {
-        output = await geminiGenerate(prompt);
-    } else {
-        throw err;
+    if (
+    err.message?.includes("rate_limit") ||
+    err.message?.includes("429") ||
+    err.status === 429
+) {
+    output = await geminiGenerate(prompt);
+} else {
+    throw err;
     }
 }
 
@@ -1128,7 +1155,7 @@ app.post("/notes", async (req, res) => {
 
         const queryVector = await embedText(topic.toLowerCase());
   
-        const { data, error } = await supabase.rpc("match_book_chunks", {
+        let { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
     match_threshold: 0, 
     match_count: 5,
