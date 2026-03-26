@@ -346,7 +346,7 @@ async function rewriteQuery(topic) {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "llama3-70b-8192",
+                model: "llama-3.1-8b-instant",
                 messages: [
                     {
                         role: "system",
@@ -370,7 +370,15 @@ Return ONLY the improved query.
         });
 
         const data = await res.json();
-        return data.choices[0].message.content.trim();
+
+const content = data?.choices?.[0]?.message?.content;
+
+if (!content) {
+    console.warn("Rewrite failed, using original query");
+    return topic;
+}
+
+return content.trim();
 
     } catch (err) {
         console.error("Rewrite failed:", err);
@@ -385,7 +393,7 @@ Return ONLY the improved query.
  */
 async function analyzeIntent(query) {
     const API_URL = "https://api.groq.com/openai/v1/chat/completions";
-    const MODEL = "llama3-70b-8192";
+    const MODEL = "llama-3.1-8b-instant";
     
     // Default fallback object
     const fallback = { intent: "explain", query: query };
@@ -451,9 +459,21 @@ IMPORTANT:
         if (!content) return fallback;
 
         // 🔥 ROBUST PARSING: Handles potential markdown backticks or whitespace
-        try {
-            const cleanedContent = content.replace(/```json|```/g, "").trim();
-            const parsed = JSON.parse(cleanedContent);
+
+   const cleanedContent = content.replace(/```json|```/g, "").trim();
+
+let parsed = {};
+
+try {
+    parsed = JSON.parse(cleanedContent);
+} catch (parseError) {
+    console.warn("JSON Parse failed. Content was:", cleanedContent);
+    parsed = {};
+}
+        
+  if (query.split(" ").length < 4) {
+    parsed.query = query + " detailed explanation with examples";
+  }
 
             // 🔥 Manual boost for abstract questions
 const lower = query.toLowerCase();
@@ -467,9 +487,7 @@ if (
 ) {
     parsed.intent = "abstract";
 }
-            if (query.split(" ").length < 4) {
-    parsed.query = query + " detailed explanation with examples";
-            }
+            
 
             let finalQuery = parsed.query || query;
 
@@ -485,11 +503,6 @@ return {
     intent: parsed.intent || fallback.intent,
     query: finalQuery
 };
-            
-        } catch (parseError) {
-            console.warn("JSON Parse failed. Content was:", content);
-            return fallback;
-        }
 
 
     } catch (err) {
@@ -845,6 +858,16 @@ const improvedQuery = analysis.query;
         
 // 🔥 Expand query for better understanding
 const expandedQuery = await rewriteQuery(improvedQuery);
+let searchQuery = expandedQuery;
+
+// 🔥 SMART MODES
+if (intent === "summary") {
+    searchQuery = "main ideas key concepts overview summary of entire document";
+}
+
+if (intent === "abstract") {
+    searchQuery = topic + " fundamental concept intuition explanation";
+}
 
 console.log("Expanded:", expandedQuery);
 
@@ -852,13 +875,12 @@ console.log("Intent:", intent);
 console.log("Improved:", improvedQuery);
 
 // 🧠 Step 2: Embed smarter query
-const queryVector = await embedText(expandedQuery.toLowerCase());
-
+const queryVector = await embedText(searchQuery.toLowerCase());
         
             const { data, error } = await 
             supabase.rpc("match_book_chunks", {
             query_embedding: queryVector,
-            match_threshold: 0,
+            match_threshold: 0.2,
             match_count: 8,
             p_user_id: userId,
             p_filename: book === "all" ? null : book
@@ -923,7 +945,7 @@ const rawChunks = combinedContext;
 let bestChunks;
 
 if (rawChunks.length > 5) {
-    bestChunks = await rerankChunks(topic, rawChunks);
+    bestChunks = await rerankChunks(expandedQuery, rawChunks);
 } else {
     bestChunks = rawChunks;
 }
@@ -933,7 +955,7 @@ if (rawChunks.length > 5) {
 const limitedChunks = bestChunks.slice(0, 6); // ❗❗ balanced
 
 const context = limitedChunks
-    .map(c => c.slice(0, 800)) // limit each chunk
+    .map(c => c.slice(0, 1000)) // limit each chunk
     .join("\n\n---\n\n");
     
 
