@@ -467,7 +467,10 @@ if (
 ) {
     parsed.intent = "abstract";
 }
-            
+            if (query.split(" ").length < 4) {
+    parsed.query = query + " detailed explanation with examples";
+            }
+
             return {
     intent: parsed.intent || fallback.intent,
     query: (parsed.query && parsed.query.length > 10)
