@@ -471,11 +471,19 @@ if (
     parsed.query = query + " detailed explanation with examples";
             }
 
-            return {
+            let finalQuery = parsed.query || query;
+
+// 🔥 Fix useless queries like "this", "this book"
+if (
+    finalQuery.length < 8 ||
+    finalQuery.toLowerCase().includes("this")
+) {
+    finalQuery = query + " detailed academic explanation with key concepts";
+}
+
+return {
     intent: parsed.intent || fallback.intent,
-    query: (parsed.query && parsed.query.length > 10)
-        ? parsed.query
-        : query + " key concepts explanation"
+    query: finalQuery
 };
             
         } catch (parseError) {
@@ -483,9 +491,6 @@ if (
             return fallback;
         }
 
-        if (query.split(" ").length < 4) {
-    parsed.query = query + " detailed explanation with examples";
-        }
 
     } catch (err) {
         if (err.name === 'AbortError') {
@@ -837,12 +842,17 @@ const analysis = await analyzeIntent(topic);
 
 const intent = analysis.intent;
 const improvedQuery = analysis.query;
+        
+// 🔥 Expand query for better understanding
+const expandedQuery = await rewriteQuery(improvedQuery);
+
+console.log("Expanded:", expandedQuery);
 
 console.log("Intent:", intent);
 console.log("Improved:", improvedQuery);
 
 // 🧠 Step 2: Embed smarter query
-const queryVector = await embedText(improvedQuery.toLowerCase());
+const queryVector = await embedText(expandedQuery.toLowerCase());
 
         
             const { data, error } = await 
@@ -864,16 +874,22 @@ if (data && data.length > 0) {
     const sorted = data.sort((a, b) => b.similarity - a.similarity);
 
     // ✅ Always take top results
-    let limit = 5;
+    let limit = 6;
 
-if (intent === "summary") limit = 12;
-if (intent === "abstract") limit = 10;
-if (intent === "notes") limit = 8;
+if (intent === "summary") limit = 15;
+if (intent === "abstract") limit = 12;
+if (intent === "notes") limit = 10;
+if (intent === "quiz") limit = 8;
 
 const topK = sorted.slice(0, limit);
 
     // ✅ Only filter if strong matches exist
-    const threshold = intent === "abstract" ? 0.2 : 0.3;
+    let threshold = 0.25;
+
+if (intent === "summary") threshold = 0.15;
+if (intent === "abstract") threshold = 0.1;
+if (intent === "notes") threshold = 0.2;
+if (intent === "explain") threshold = 0.25;
 
 const strongMatches = topK.filter(row => row.similarity > threshold);
 
