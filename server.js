@@ -336,8 +336,14 @@ async function rebuildIndexesFromSupabase() {
 }
 
 async function rerankChunks(query, chunks) {
+
+    // 🔥 SKIP RERANK IF SMALL DATA
+if (!chunks || chunks.length <= 5) {
+    return chunks;
+}
+    
     try {
-        const limitedChunks = chunks.slice(0, 5); // 🔥 limit for free tier
+        const limitedChunks = chunks.slice(0, 6); // 🔥 limit for free tier
 
         const prompt = `
 Select the 5 most relevant chunks for the query.
@@ -377,6 +383,23 @@ try {
         console.error("Rerank failed:", err);
         return chunks.slice(0, 5); // fallback
     }
+}
+
+
+function isComplexQuery(query) {
+    if (!query) return false;
+
+    const q = query.toLowerCase();
+
+    return (
+        q.split(" ").length > 12 || // long query
+        q.includes("compare") ||
+        q.includes("difference") ||
+        q.includes("mechanism") ||
+        q.includes("process") ||
+        q.includes("why") ||
+        q.includes("how")
+    );
 }
 
 async function rewriteQuery(topic) {
@@ -526,10 +549,10 @@ try {
     parsed = {};
 }
         
-  if (query.split(" ").length < 4) {
+  if (query.split(" ").length < 4 && !parsed.query) {
     parsed.query = query + " detailed explanation with examples";
   }
-
+        
             // 🔥 Manual boost for abstract questions
 const lower = query.toLowerCase();
 
@@ -549,18 +572,19 @@ if (
 // 🔥 Fix useless queries like "this", "this book"
 if (
     finalQuery.length < 8 ||
-    finalQuery.toLowerCase().includes("this")
+    finalQuery.toLowerCase().trim() === "this"
 ) {
     finalQuery = query + " detailed academic explanation with key concepts";
 }
+
+ // 🔥 Add domain context
+parsed.query += " academic explanation key concepts examples";
 
 return {
     intent: parsed.intent || fallback.intent,
     query: finalQuery
 };
         
-// 🔥 Add domain context
-parsed.query += " academic explanation key concepts examples";
 
     } catch (err) {
         if (err.name === 'AbortError') {
@@ -927,6 +951,11 @@ if (
 
 let searchQuery = expandedQuery;
 
+// 🔥 Boost complex queries
+if (isComplexQuery(topic)) {
+    searchQuery += " detailed mechanism explanation examples";
+}
+
 // 🔥 SMART MODES
 if (intent === "summary") {
     searchQuery = topic + " main ideas key concepts important points summary";
@@ -989,7 +1018,12 @@ const strongMatches = topK.filter(row => row.similarity > threshold);
         
         
   const combinedContext = vectorContext;
-
+        
+   // 🔥 Boost top chunk priority
+if (combinedContext.length > 0) {
+    combinedContext.unshift(combinedContext[0]);
+}
+        
         console.log("Vector search results:", data);
         console.log("Vector results:", vectorContext.length);
         console.log("Hybrid retrieval working:");
@@ -1029,12 +1063,16 @@ const rawChunks = combinedContext;
 // 🔥 Smart rerank (only when needed)
 let bestChunks;
 
-if (rawChunks.length > 5) {
+if (
+    rawChunks.length > 8 &&
+    (isComplexQuery(topic) || intent === "summary" || intent === "abstract")
+) {
+    console.log("🧠 Smart rerank activated");
     bestChunks = await rerankChunks(expandedQuery, rawChunks);
 } else {
     bestChunks = rawChunks;
 }
-
+        
 // Build final context
 // 🔥 LIMIT CONTEXT SIZE (CRITICAL FIX)
 let limit = 6;
@@ -1133,17 +1171,15 @@ try {
 
 } catch (err) {
 
-    console.warn("⚠️ Groq failed, switching to Gemini");
+    console.warn("⚠️ Groq failed → switching to Gemini");
 
-    if (
-    err.message?.includes("rate_limit") ||
-    err.message?.includes("429") ||
-    err.status === 429
-) {
+// 🔥 ALWAYS fallback (safe mode)
+try {
     output = await geminiGenerate(prompt);
-} else {
-    throw err;
-    }
+} catch (gemErr) {
+    console.error("❌ Gemini also failed:", gemErr);
+    throw new Error("Both AI providers failed");
+}
 }
 
         // 💾 SAVE TO CACHE
