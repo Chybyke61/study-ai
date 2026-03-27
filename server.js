@@ -212,7 +212,9 @@ async function extractText(file) {
     const fileName = file.originalname || file.filename || file.path || "";
 const ext = path.extname(fileName).toLowerCase();
     try {
+        //==========
         // ✅ PDF
+        //==========
         if (ext === ".pdf") {
         console.log("📄 Parsing PDF...");
 
@@ -245,6 +247,7 @@ if (
 
 console.warn("❌ No usable text from PDF (even after OCR)");
 return "";
+        } 
         
  // ======================
 // ✅ DOCX FIX (PASTE HERE)
