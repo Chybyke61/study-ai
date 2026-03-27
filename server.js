@@ -217,31 +217,31 @@ async function geminiOCR(filePath, mimeType = "image/png") {
 }*/
 
 function isBadText(text) {
-    if (!text) return true;
+    if (!text || text.length < 200) return true;
 
     const clean = text.replace(/\s+/g, " ").trim();
+    const words = clean.split(" ");
+
+    if (words.length < 30) return true;
 
     const charCount = clean.length;
-    const words = clean.split(" ");
-    const wordCount = words.length;
 
     const letters = (clean.match(/[a-zA-Z]/g) || []).length;
     const letterRatio = letters / charCount;
+    if (letterRatio < 0.6) return true;
 
-    const weirdChars = (clean.match(/[^a-zA-Z0-9 .,]/g) || []).length;
-    const weirdRatio = weirdChars / charCount;
+    const weirdChars = (clean.match(/[^a-zA-Z0-9 .,?!'"()\-]/g) || []).length;
+    if ((weirdChars / charCount) > 0.1) return true;
 
-    const realWords = words.filter(w => /^[a-zA-Z]{4,}$/.test(w)).length;
-    const realWordRatio = realWords / wordCount;
+    const realWords = words.filter(w => /^[a-zA-Z]{3,}$/.test(w)).length;
+    const realWordRatio = realWords / words.length;
+    if (realWordRatio < 0.4) return true;
 
-    // 🔥 HARD RULES
-    if (charCount < 200) return true;
-    if (wordCount < 30) return true;
+    // 🔥 NEW: catch fake repeated nonsense words
+    const uniqueWords = new Set(words.map(w => w.toLowerCase()));
+    const diversityRatio = uniqueWords.size / words.length;
 
-    // 🔥 KEY FIXES
-    if (letterRatio < 0.6) return true;      // 🚨 catches symbol-heavy text
-    if (weirdRatio > 0.1) return true;       // 🚨 too many weird chars
-    if (realWordRatio < 0.5) return true;    // 🚨 not enough real words
+    if (diversityRatio < 0.3) return true; // 🚨 KEY ADDITION
 
     return false;
 }
