@@ -158,6 +158,7 @@ async function safeGenerate(prompt) {
 async function geminiOCR(filePath, mimeType = "image/png") {
     try {
         console.log("🔍 Gemini OCR running...");
+        const fileBuffer = fs.readFileSync(filePath);
 
         const result = await genAI.models.generateContent({
   model: "gemini-2.5-flash",
