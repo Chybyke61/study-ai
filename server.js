@@ -13,8 +13,11 @@ const fs = require("fs");
 const path = require("path");
 const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const { GoogleGenAI } = require("@google/genai");
+
+const genAI = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
+});
 const natural = require("natural");
 const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require("@aws-sdk/client-s3");
@@ -125,15 +128,12 @@ function isLikelyScanned(text) {
 
 async function geminiGenerate(prompt) {
     try {
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash-latest"
-        });
+        const result = await genAI.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: prompt
+});
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-
-        return response.text();
-
+return result.text;
     } catch (err) {
         console.error("Gemini failed:", err);
         throw err;
@@ -159,26 +159,27 @@ async function geminiOCR(filePath, mimeType = "image/png") {
     try {
         console.log("🔍 Gemini OCR running...");
 
-        const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash-latest"
-        });
+        const result = await genAI.models.generateContent({
+  model: "gemini-2.5-flash",
+  contents: [
+    {
+      role: "user",
+      parts: [
+        {
+          inlineData: {
+            data: fileBuffer.toString("base64"),
+            mimeType
+          }
+        },
+        {
+          text: "Extract all readable text from this document. Return only clean text."
+        }
+      ]
+    }
+  ]
+});
 
-        const fileBuffer = fs.readFileSync(filePath);
-
-        const result = await model.generateContent([
-            {
-                inlineData: {
-                    data: fileBuffer.toString("base64"),
-                    mimeType
-                }
-            },
-            {
-                text: "Extract all readable text from this document. Return only clean text."
-            }
-        ]);
-
-        const response = await result.response;
-        const text = response.text();
+const text = result.text || "";
 
         console.log("✅ Gemini OCR done:", text.length);
 
