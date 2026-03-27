@@ -190,25 +190,8 @@ async function geminiOCR(filePath, mimeType = "image/png") {
     }
 }
 
-/*function isScannedPDF(text) {
-    if (!text) return true;
 
-    const clean = text.trim();
-
-    const wordCount = clean.split(/\s+/).length;
-    const charCount = clean.length;
-
-    const hasRealWords = /[a-zA-Z]{3,}/.test(clean);
-
-    // 🔥 SCANNED CONDITIONS
-    if (charCount < 30) return true;              // almost empty
-    if (wordCount < 8) return true;               // too few words
-    if (!hasRealWords) return true;               // no real language
-
-    return false; // looks like real text
-}*/
-
-function isBadText(text) {
+/*function isBadText(text) {
     if (!text) return true;
 
     const clean = text.replace(/\s+/g, " ").trim();
@@ -229,6 +212,36 @@ function isBadText(text) {
     if (wordCount < 20) return true;
     if (weirdChars / charCount > 0.15) return true;
     if (realWordRatio < 0.4) return true; // 🔥 KEY FIX
+
+    return false;
+}*/
+
+function isBadText(text) {
+    if (!text) return true;
+
+    const clean = text.replace(/\s+/g, " ").trim();
+
+    const charCount = clean.length;
+    const words = clean.split(" ");
+    const wordCount = words.length;
+
+    const letters = (clean.match(/[a-zA-Z]/g) || []).length;
+    const letterRatio = letters / charCount;
+
+    const weirdChars = (clean.match(/[^a-zA-Z0-9 .,]/g) || []).length;
+    const weirdRatio = weirdChars / charCount;
+
+    const realWords = words.filter(w => /^[a-zA-Z]{4,}$/.test(w)).length;
+    const realWordRatio = realWords / wordCount;
+
+    // 🔥 HARD RULES
+    if (charCount < 200) return true;
+    if (wordCount < 30) return true;
+
+    // 🔥 KEY FIXES
+    if (letterRatio < 0.6) return true;      // 🚨 catches symbol-heavy text
+    if (weirdRatio > 0.1) return true;       // 🚨 too many weird chars
+    if (realWordRatio < 0.5) return true;    // 🚨 not enough real words
 
     return false;
 }
