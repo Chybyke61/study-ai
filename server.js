@@ -214,15 +214,23 @@ function isBadText(text) {
     const clean = text.replace(/\s+/g, " ").trim();
 
     const charCount = clean.length;
-    const wordCount = clean.split(" ").length;
+    const words = clean.split(" ");
+    const wordCount = words.length;
+
     const weirdChars = (clean.match(/[^a-zA-Z0-9 .,]/g) || []).length;
 
-    // 🔥 Smart detection
-    if (charCount < 50) return true;              // too small
-    if (wordCount < 10) return true;              // too few words
-    if (weirdChars / charCount > 0.2) return true; // too noisy
+    // 🔥 NEW: detect real English words
+    const realWords = words.filter(w => /^[a-zA-Z]{3,}$/.test(w)).length;
 
-    return false; // looks clean
+    const realWordRatio = realWords / wordCount;
+
+    // 🚨 STRONG CONDITIONS
+    if (charCount < 100) return true;
+    if (wordCount < 20) return true;
+    if (weirdChars / charCount > 0.15) return true;
+    if (realWordRatio < 0.4) return true; // 🔥 KEY FIX
+
+    return false;
 }
 
 
