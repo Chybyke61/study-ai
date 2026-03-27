@@ -155,6 +155,59 @@ async function safeGenerate(prompt) {
     }
 }
 
+async function geminiOCR(filePath, mimeType = "image/png") {
+    try {
+        console.log("🔍 Gemini OCR running...");
+
+        const model = genAI.getGenerativeModel({
+            model: "gemini-1.5-flash"
+        });
+
+        const fileBuffer = fs.readFileSync(filePath);
+
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    data: fileBuffer.toString("base64"),
+                    mimeType
+                }
+            },
+            {
+                text: "Extract all readable text from this document. Return only clean text."
+            }
+        ]);
+
+        const response = await result.response;
+        const text = response.text();
+
+        console.log("✅ Gemini OCR done:", text.length);
+
+        return text;
+
+    } catch (err) {
+        console.error("❌ Gemini OCR failed:", err);
+        return "";
+    }
+}
+
+function isScannedPDF(text) {
+    if (!text) return true;
+
+    const clean = text.trim();
+
+    const wordCount = clean.split(/\s+/).length;
+    const charCount = clean.length;
+
+    const hasRealWords = /[a-zA-Z]{3,}/.test(clean);
+
+    // 🔥 SCANNED CONDITIONS
+    if (charCount < 30) return true;              // almost empty
+    if (wordCount < 8) return true;               // too few words
+    if (!hasRealWords) return true;               // no real language
+
+    return false; // looks like real text
+}
+
 async function extractText(file) {
     const fileName = file.originalname || file.filename || file.path || "";
 const ext = path.extname(fileName).toLowerCase();
@@ -172,15 +225,26 @@ const ext = path.extname(fileName).toLowerCase();
         console.log("Preview:", text.slice(0, 100));
 
         // 🔥 ACCEPT ANY REAL TEXT
-        if (text.trim().length > 20) {
-            console.log("✅ PDF parsed successfully");
-            return text;
-        }
+      if (!isScannedPDF(text)) {
+    console.log("✅ Real PDF detected");
+    return text;
+      }  
 
-        console.warn("⚠️ PDF has very little text");
-        return "";
+// 🔥 OCR FALLBACK HERE
+console.warn("⚠️ Scanned PDF → using Gemini OCR");
 
-    } 
+const ocrText = await geminiOCR(file.path, "application/pdf");
+
+if (
+    ocrText &&
+    ocrText.trim().length > 40 &&
+    /[a-zA-Z]{3,}/.test(ocrText)
+) {
+    return ocrText;
+}
+
+console.warn("❌ No usable text from PDF (even after OCR)");
+return "";
         
  // ======================
 // ✅ DOCX FIX (PASTE HERE)
