@@ -258,10 +258,18 @@ const ext = path.extname(fileName).toLowerCase();
         console.log("Preview:", cleanedText.slice(0, 100));
             
         // 🔥 ACCEPT ANY REAL TEXT
-      if (!isBadText(cleanedText)) {
+      const bad = isBadText(cleanedText);
+
+console.log("🧠 BadText check:", bad);
+console.log("📊 Stats:", {
+    length: cleanedText.length,
+    words: cleanedText.split(" ").length
+});
+
+if (!bad) {
     console.log("✅ Clean PDF detected");
     return cleanedText;
-      }
+}
 
 // 🔥 OCR FALLBACK HERE
 console.warn("⚠️ Scanned PDF → using Gemini OCR");
