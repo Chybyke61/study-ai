@@ -596,6 +596,33 @@ return {
     }
 }
 
+// 🔥 SMART QUIZ QUERY ENGINE
+function smartQuizQuery(query, context = "") {
+    const lower = query.toLowerCase().trim();
+
+    // 🚫 Extremely vague input
+    if (lower.length < 4) {
+        return "Generate a quiz based on the key concepts in the uploaded material";
+    }
+
+    // 🔥 vague words
+    if (["this", "that", "it", "something", "stuff"].includes(lower)) {
+        return "Generate a quiz from the main topics and key concepts in the uploaded material";
+    }
+
+    // 🔥 vague phrases
+    if (lower.includes("this book") || lower.includes("this topic")) {
+        return "Generate a quiz from the important concepts, definitions, and applications in the uploaded material";
+    }
+
+    // 🔥 "quiz this"
+    if (lower.includes("quiz")) {
+        return query + " with important concepts, definitions, and exam-style questions";
+    }
+
+    // ✅ normal query → enhance it
+    return query + " with key concepts, applications, and exam-style questions";
+}
 
 // --- ROUTES ---
 
@@ -1331,6 +1358,8 @@ ${context}
     try {
 
         const { topic, level, book } = req.body;
+        // 🔥 SMART QUIZ QUERY (DO NOT BLOCK USER)
+        const smartQuery = smartQuizQuery(topic);
         const userId = req.headers["x-user-id"];
 
         // 🔍 CHECK CACHE FIRST
