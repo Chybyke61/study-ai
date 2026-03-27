@@ -190,7 +190,7 @@ async function geminiOCR(filePath, mimeType = "image/png") {
     }
 }
 
-function isScannedPDF(text) {
+/*function isScannedPDF(text) {
     if (!text) return true;
 
     const clean = text.trim();
@@ -206,7 +206,25 @@ function isScannedPDF(text) {
     if (!hasRealWords) return true;               // no real language
 
     return false; // looks like real text
+}*/
+
+function isBadText(text) {
+    if (!text) return true;
+
+    const clean = text.replace(/\s+/g, " ").trim();
+
+    const charCount = clean.length;
+    const wordCount = clean.split(" ").length;
+    const weirdChars = (clean.match(/[^a-zA-Z0-9 .,]/g) || []).length;
+
+    // 🔥 Smart detection
+    if (charCount < 50) return true;              // too small
+    if (wordCount < 10) return true;              // too few words
+    if (weirdChars / charCount > 0.2) return true; // too noisy
+
+    return false; // looks clean
 }
+
 
 async function extractText(file) {
     const fileName = file.originalname || file.filename || file.path || "";
@@ -223,29 +241,31 @@ const ext = path.extname(fileName).toLowerCase();
 
         const text = data.text || "";
 
-        console.log("PDF text length:", text.length);
-        console.log("Preview:", text.slice(0, 100));
+        const cleanedText = text
+    .replace(/[^\x00-\x7F]/g, " ")  // remove weird symbols
+    .replace(/\s+/g, " ")           // normalize spaces
+    .trim();
 
+        console.log("PDF text length:", cleanedText.length);
+        console.log("Preview:", cleanedText.slice(0, 100));
+            
         // 🔥 ACCEPT ANY REAL TEXT
-      if (!isScannedPDF(text)) {
-    console.log("✅ Real PDF detected");
-    return text;
-      }  
+      if (!isBadText(cleanedText)) {
+    console.log("✅ Clean PDF detected");
+    return cleanedText;
+      }
 
 // 🔥 OCR FALLBACK HERE
 console.warn("⚠️ Scanned PDF → using Gemini OCR");
 
 const ocrText = await geminiOCR(file.path, "application/pdf");
 
-if (
-    ocrText &&
-    ocrText.trim().length > 40 &&
-    /[a-zA-Z]{3,}/.test(ocrText)
-) {
-    return ocrText;
+if (ocrText && ocrText.trim().length > 30) {
+    console.log("✅ OCR used");
+    return ocrText.replace(/\s+/g, " ").trim();
 }
 
-console.warn("❌ No usable text from PDF (even after OCR)");
+console.warn("❌ OCR failed or too short");
 return "";
         } 
         
