@@ -1380,7 +1380,7 @@ ${context}
         }
 
       
-        const queryVector = await embedText(topic.toLowerCase());
+        const queryVector = await embedText(smartQuery.toLowerCase());
 
 const { data, error } = await supabase.rpc("match_book_chunks", {
     query_embedding: queryVector,
@@ -1406,7 +1406,7 @@ const rawChunks = data.map(row => row.content);
 let bestChunks;
 
 if (rawChunks.length > 5) {
-    bestChunks = await rerankChunks(topic, rawChunks);
+    bestChunks = await rerankChunks(smartQuery, rawChunks);
 } else {
     bestChunks = rawChunks;
 }
@@ -1433,7 +1433,7 @@ You are a Senior Academic Examiner specializing in psychometric assessment desig
 ---
 
 ### QUIZ DATA:
-Topic: ${topic}
+Topic: ${smartQuery}
 
 Textbook Context:
 ${context}
@@ -1463,7 +1463,23 @@ D) [Option]
             model:"llama-3.1-8b-instant",
         });
 
-        const output = chat.choices[0].message.content;
+        let output = chat.choices[0].message.content;
+        
+        // 🔥 FIX BROKEN QUIZ FORMAT
+if (!output || !output.includes("## Question 1")) {
+    console.warn("⚠️ Quiz format broken → fallback");
+
+    try {
+        const fallback = await geminiGenerate(prompt);
+
+        if (fallback && fallback.includes("## Question 1")) {
+            output = fallback;
+        }
+    } catch (err) {
+        console.error("Fallback failed:", err);
+    }
+}
+        
 
         // 💾 SAVE TO CACHE
         await supabase.from("ai_cache").insert({
