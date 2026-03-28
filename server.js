@@ -1097,7 +1097,7 @@ if (analysis.intent === "summary") {
     }
 
     // STRICT LIMITS 
-    const MAX_CHUNKS = 6;
+    const MAX_CHUNKS = 8;
 
     const context = allChunks
         .slice(0, MAX_CHUNKS)
@@ -1106,13 +1106,47 @@ if (analysis.intent === "summary") {
 
     console.log("🧠 Summary context size:", context.length);
 
-    const prompt = `
+    /*const prompt = `
 You are a university-level tutor.
 
 Summarize the following material into:
 - Key ideas
 - Important concepts
 - Clear structure
+
+Material:
+${context}
+`;*/
+
+    const prompt = `
+You are a university-level academic tutor.
+
+Your task is to generate a DETAILED and WELL-STRUCTURED summary of the material.
+
+### REQUIREMENTS:
+- Do NOT be brief
+- Cover ALL important concepts
+- Expand explanations clearly
+- Maintain academic depth
+
+### FORMAT:
+
+# Overview
+Explain the main idea of the material in detail.
+
+# Key Concepts
+Explain each important concept clearly with explanation.
+
+# Important Details
+Include supporting explanations, examples, or processes.
+
+# Summary Points
+Provide bullet points for revision.
+
+### RULES:
+- Stay faithful to the material
+- Do NOT skip important sections
+- Do NOT shorten excessively
 
 Material:
 ${context}
