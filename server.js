@@ -1079,6 +1079,50 @@ app.post("/deep-explain", async (req, res) => {
         // 🧠 Step 1: Understand intent
 const analysis = await analyzeIntent(topic);
 
+// 🚨 SAFE SUMMARY MODE (LOW RAM, BYPASS SEARCH)
+if (analysis.intent === "summary") {
+
+    console.log("📘 Summary mode activated");
+
+    const { data: allChunks } = await supabase
+        .from("book_chunks")
+        .select("content")
+        .eq("user_id", userId)
+        .eq("filename", book === "all" ? undefined : book);
+
+    if (!allChunks || allChunks.length === 0) {
+        return res.json({
+            explanation: "No content found to summarize."
+        });
+    }
+
+    // STRICT LIMITS 
+    const MAX_CHUNKS = 6;
+
+    const context = allChunks
+        .slice(0, MAX_CHUNKS)
+        .map(row => row.content.slice(0, 400)) // trim each chunk
+        .join("\n\n---\n\n");
+
+    console.log("🧠 Summary context size:", context.length);
+
+    const prompt = `
+You are a university-level tutor.
+
+Summarize the following material into:
+- Key ideas
+- Important concepts
+- Clear structure
+
+Material:
+${context}
+`;
+
+    const output = await safeGenerate(prompt);
+
+    return res.json({ explanation: output });
+}
+
 const intent = analysis.intent;
 const improvedQuery = analysis.query;
         
