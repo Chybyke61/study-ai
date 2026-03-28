@@ -1127,6 +1127,18 @@ const queryVector = await embedText(searchQuery.toLowerCase());
             p_filename: book === "all" ? null : book
         });
 
+
+        // 🚨 HARD RELEVANCE CHECK
+const MIN_SIMILARITY = 0.3;
+
+const validMatches = data.filter(row => row.similarity >= MIN_SIMILARITY);
+
+if (!validMatches || validMatches.length === 0) {
+    return res.json({
+        explanation: "Not found in your uploaded documents"
+    });
+}
+
         
 // 🔥 Filter weak matches (simulate scoreThreshold)
 let vectorContext = [];
@@ -1225,12 +1237,15 @@ let limit = 6;
 if (intent === "summary") limit = 10;
 if (intent === "abstract") limit = 8;
 
-const limitedChunks = bestChunks.slice(0, limit);
+const limitedChunks = bestChunks
+    .filter(c => c && c.length > 200)
+    .slice(0, limit);
 
 const context = limitedChunks
-    .filter(c => c && c.length > 100)
-    .map(c => c.slice(0, 800))
+    .filter(c => c && c.length > 200)
     .join("\n\n---\n\n");
+
+        console.log("🧠 FINAL CONTEXT:\n", context);
         
    let modeInstruction = "";
 
@@ -1259,7 +1274,12 @@ ${modeInstruction}
 ### CORE DIRECTIVES
 - Skip Pleasantries: Do NOT greet the user. Begin immediately with the academic explanation.
 - Primary Grounding: Base your response primarily on the provided textbook context.
-- Supplemental Knowledge: You may use general academic knowledge ONLY to clarify, expand, or simplify concepts already present in the context. Do NOT introduce unrelated topics.
+- STRICT RULE: You are ONLY allowed to use the provided context.
+- Do NOT use any external or prior knowledge.
+- If the answer is not explicitly found in the context, respond ONLY with:
+  "Not found in your uploaded documents"
+- Use wording and phrasing similar to the textbook.
+- Stay close to the original text.
 - You must answer ONLY using the provided study material.
 
 ### PEDAGOGICAL APPROACH
