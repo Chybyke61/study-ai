@@ -193,31 +193,6 @@ const text = result.text || "";
 }
 
 
-/*function isBadText(text) {
-    if (!text) return true;
-
-    const clean = text.replace(/\s+/g, " ").trim();
-
-    const charCount = clean.length;
-    const words = clean.split(" ");
-    const wordCount = words.length;
-
-    const weirdChars = (clean.match(/[^a-zA-Z0-9 .,]/g) || []).length;
-
-    // 🔥 NEW: detect real English words
-    const realWords = words.filter(w => /^[a-zA-Z]{3,}$/.test(w)).length;
-
-    const realWordRatio = realWords / wordCount;
-
-    // 🚨 STRONG CONDITIONS
-    if (charCount < 100) return true;
-    if (wordCount < 20) return true;
-    if (weirdChars / charCount > 0.15) return true;
-    if (realWordRatio < 0.4) return true; // 🔥 KEY FIX
-
-    return false;
-}*/
-
 function isBadText(text) {
     if (!text || text.length < 200) return true;
 
@@ -299,9 +274,77 @@ if (ocrText && ocrText.trim().length > 30) {
 console.warn("❌ OCR failed or too short");
 return "";
         } 
+
+// ======================
+// PPTX SUPPORT
+// ======================
+if (ext === ".pptx") {
+    console.log("📊 PPT detected → Gemini");
+
+    try {
+        const fileBuffer = fs.readFileSync(file.path);
+
+        const result = await genAI.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [
+                {
+                    role: "user",
+                    parts: [
+                        {
+                            inlineData: {
+                                data: fileBuffer.toString("base64"),
+                                mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                            }
+                        },
+                        {
+                            text: `
+Extract slide content.
+
+Format STRICTLY like this:
+
+[Slide 1] Title: ...
+Content: ...
+
+[Slide 2] Title: ...
+Content: ...
+
+Rules:
+- Keep each slide separate
+- Include slide title if available
+- Keep bullet points inside Content
+- Do NOT summarize
+- Do NOT explain
+- Do NOT add introduction text
+`
+                        }
+                    ]
+                }
+            ]
+        });
+
+        const text = result.text || "";
+
+        console.log("📊 PPT text length:", text.length);
+
+        // 🔥 Strong validation (prevents bad embeddings)
+        if (text && text.length > 120) {
+            console.log("✅ PPT extracted successfully");
+
+            // ⚠️ DO NOT destroy formatting
+            return text.trim();
+        }
+
+        console.warn("⚠️ PPT extraction too short");
+
+    } catch (err) {
+        console.error("❌ PPT extraction failed:", err.message);
+    }
+
+    return "";
+}
         
- // ======================
-// ✅ DOCX FIX (PASTE HERE)
+ // =====================
+// ✅ DOCX FIX
 // ======================
         if (ext === ".docx") {
            console.log("📄 Reading DOCX with mammoth...");
