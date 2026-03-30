@@ -280,54 +280,54 @@ return "";
         // ======================
 // ✅ PPTX SUPPORT (SAFE)
 // ======================
+
 if (ext === ".pptx") {
     console.log("📊 PPT detected → using officeparser v6");
 
     try {
-        const rawData = await officeParser.parseOffice(file.path);
+        const absolutePath = path.resolve(process.cwd(), file.path);
+        console.log("📂 Processing file at:", absolutePath);
+
+        const rawData = await officeParser.parseOffice(absolutePath);
+
         let extractedText = "";
 
-        // ✅ CASE 1: Structured Object (AST)
         if (rawData && typeof rawData === "object") {
             if (typeof rawData.toText === "function") {
                 extractedText = rawData.toText();
             } 
-            else if (Array.isArray(rawData.slides)) {
+            else if (rawData.slides) {
                 rawData.slides.forEach((slide, i) => {
                     extractedText += `\n\n[Slide ${i + 1}]\n`;
-                    slide.texts?.forEach(t => { extractedText += t + "\n"; });
+                    slide.texts?.forEach(t => {
+                        extractedText += t + "\n";
+                    });
                 });
             }
-            // Fallback for some v6 versions that return a content array
-            else if (Array.isArray(rawData.content)) {
-                extractedText = rawData.content.map(c => c.value || "").join("\n");
-            }
         } 
-        // ✅ CASE 2: Plain String
         else if (typeof rawData === "string") {
             extractedText = rawData;
         }
 
-        // 🧹 SMART CLEAN (Preserve Newlines for Slide Markers)
-        // Instead of replacing ALL whitespace, we just trim trailing spaces on lines
-        extractedText = extractedText
+        const finalOutput = extractedText
             .split('\n')
             .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .join('\n');
+            .join('\n')
+            .replace(/\n{3,}/g, '\n\n');
 
-        console.log("✅ PPT extracted. Length:", extractedText.length);
-
-        if (extractedText.length > 50) {
-            return extractedText;
+        if (finalOutput.length > 50) {
+            console.log("✅ PPT extraction successful");
+            return finalOutput;
         }
+
+        console.warn("⚠️ Empty → fallback needed");
 
     } catch (error) {
         console.error("❌ PPT extraction failed:", error.message);
     }
+
     return "";
 }
-
 
 
         
