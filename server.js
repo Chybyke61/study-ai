@@ -25,6 +25,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
+const { parseOfficeAsync } = require("officeparser");
 const { type } = require("os");
 
 // --- INITIALIZATION ---
@@ -278,7 +279,7 @@ return "";
 // ======================
 // PPTX SUPPORT
 // ======================
-if (ext === ".pptx") {
+/*if (ext === ".pptx") {
     console.log("📊 PPT detected → Gemini");
 
     try {
@@ -341,6 +342,52 @@ Rules:
     }
 
     return "";
+}*/
+
+        // ======================
+// ✅ PPTX SUPPORT (SAFE)
+// ======================
+if (ext === ".pptx") {
+    console.log("📊 PPT detected → using officeparser");
+
+    try {
+        const rawData = await parseOfficeAsync(file.path);
+
+        let extractedText = "";
+
+        if (typeof rawData === "string") {
+            extractedText = rawData;
+        } else if (rawData?.slides) {
+            rawData.slides.forEach((slide, i) => {
+                extractedText += `\n\n[Slide ${i + 1}]\n`;
+
+                if (slide.texts) {
+                    slide.texts.forEach(text => {
+                        extractedText += text + "\n";
+                    });
+                }
+            });
+        }
+
+        // 🔥 CLEAN TEXT
+        extractedText = extractedText
+            .replace(/\s+/g, " ")
+            .trim();
+
+        console.log("PPT length:", extractedText.length);
+
+        if (extractedText.length > 50) {
+            console.log("✅ PPT extracted");
+            return extractedText;
+        }
+
+        console.warn("⚠️ PPT empty");
+        return "";
+
+    } catch (error) {
+        console.error("❌ PPT extraction failed:", error.message);
+        return "";
+    }
 }
         
  // =====================
