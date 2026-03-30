@@ -282,50 +282,46 @@ return "";
 // ======================
 
 if (ext === ".pptx") {
-    console.log("📊 PPT detected → using officeparser v6");
+    console.log("📊 PPT detected → using officeparser v6 (Safe Extension Mode)");
 
+    // 1. Create a temporary path that DEFINITELY ends in .pptx
+    // OfficeParser needs this to identify the file type
+    const tempPptxPath = path.resolve(file.path + ".pptx");
+    
     try {
-        const absolutePath = path.resolve(process.cwd(), file.path);
-        console.log("📂 Processing file at:", absolutePath);
+        // 2. Rename/Copy the file so it has the .pptx extension
+        fs.copyFileSync(path.resolve(file.path), tempPptxPath);
+        console.log("📂 Processing file at:", tempPptxPath);
 
-        const rawData = await officeParser.parseOffice(absolutePath);
-
+        // 3. Parse the file with the proper extension
+        const rawData = await officeParser.parseOffice(tempPptxPath);
+        
         let extractedText = "";
-
         if (rawData && typeof rawData === "object") {
-            if (typeof rawData.toText === "function") {
-                extractedText = rawData.toText();
-            } 
-            else if (rawData.slides) {
-                rawData.slides.forEach((slide, i) => {
-                    extractedText += `\n\n[Slide ${i + 1}]\n`;
-                    slide.texts?.forEach(t => {
-                        extractedText += t + "\n";
-                    });
-                });
-            }
-        } 
-        else if (typeof rawData === "string") {
-            extractedText = rawData;
+            extractedText = typeof rawData.toText === "function" ? rawData.toText() : JSON.stringify(rawData);
+        } else {
+            extractedText = String(rawData);
         }
+
+        // 4. Clean up the temp .pptx file immediately
+        if (fs.existsSync(tempPptxPath)) fs.unlinkSync(tempPptxPath);
 
         const finalOutput = extractedText
             .split('\n')
             .map(line => line.trim())
-            .join('\n')
-            .replace(/\n{3,}/g, '\n\n');
+            .filter(line => line.length > 0)
+            .join('\n');
 
         if (finalOutput.length > 50) {
             console.log("✅ PPT extraction successful");
             return finalOutput;
         }
 
-        console.warn("⚠️ Empty → fallback needed");
-
     } catch (error) {
         console.error("❌ PPT extraction failed:", error.message);
+        // Clean up temp file if error occurs
+        if (fs.existsSync(tempPptxPath)) fs.unlinkSync(tempPptxPath);
     }
-
     return "";
 }
 
