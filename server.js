@@ -25,7 +25,7 @@ const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { pipeline, max } = require("@xenova/transformers");
 const e = require("express");
 const mammoth = require("mammoth");
-const { parseOfficeAsync } = require("officeparser");
+const officeParser = require("officeparser");
 const { type } = require("os");
 
 // --- INITIALIZATION ---
@@ -276,119 +276,60 @@ console.warn("❌ OCR failed or too short");
 return "";
         } 
 
-// ======================
-// PPTX SUPPORT
-// ======================
-/*if (ext === ".pptx") {
-    console.log("📊 PPT detected → Gemini");
-
-    try {
-        const fileBuffer = fs.readFileSync(file.path);
-
-        const result = await genAI.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [
-                {
-                    role: "user",
-                    parts: [
-                        {
-                            inlineData: {
-                                data: fileBuffer.toString("base64"),
-                                mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                            }
-                        },
-                        {
-                            text: `
-Extract slide content.
-
-Format STRICTLY like this:
-
-[Slide 1] Title: ...
-Content: ...
-
-[Slide 2] Title: ...
-Content: ...
-
-Rules:
-- Keep each slide separate
-- Include slide title if available
-- Keep bullet points inside Content
-- Do NOT summarize
-- Do NOT explain
-- Do NOT add introduction text
-`
-                        }
-                    ]
-                }
-            ]
-        });
-
-        const text = result.text || "";
-
-        console.log("📊 PPT text length:", text.length);
-
-        // 🔥 Strong validation (prevents bad embeddings)
-        if (text && text.length > 120) {
-            console.log("✅ PPT extracted successfully");
-
-            // ⚠️ DO NOT destroy formatting
-            return text.trim();
-        }
-
-        console.warn("⚠️ PPT extraction too short");
-
-    } catch (err) {
-        console.error("❌ PPT extraction failed:", err.message);
-    }
-
-    return "";
-}*/
 
         // ======================
 // ✅ PPTX SUPPORT (SAFE)
 // ======================
 if (ext === ".pptx") {
-    console.log("📊 PPT detected → using officeparser");
+    console.log("📊 PPT detected → using officeparser v6");
 
     try {
-        const rawData = await parseOfficeAsync(file.path);
-
+        const rawData = await officeParser.parseOffice(file.path);
         let extractedText = "";
 
-        if (typeof rawData === "string") {
+        // ✅ CASE 1: Structured Object (AST)
+        if (rawData && typeof rawData === "object") {
+            if (typeof rawData.toText === "function") {
+                extractedText = rawData.toText();
+            } 
+            else if (Array.isArray(rawData.slides)) {
+                rawData.slides.forEach((slide, i) => {
+                    extractedText += `\n\n[Slide ${i + 1}]\n`;
+                    slide.texts?.forEach(t => { extractedText += t + "\n"; });
+                });
+            }
+            // Fallback for some v6 versions that return a content array
+            else if (Array.isArray(rawData.content)) {
+                extractedText = rawData.content.map(c => c.value || "").join("\n");
+            }
+        } 
+        // ✅ CASE 2: Plain String
+        else if (typeof rawData === "string") {
             extractedText = rawData;
-        } else if (rawData?.slides) {
-            rawData.slides.forEach((slide, i) => {
-                extractedText += `\n\n[Slide ${i + 1}]\n`;
-
-                if (slide.texts) {
-                    slide.texts.forEach(text => {
-                        extractedText += text + "\n";
-                    });
-                }
-            });
         }
 
-        // 🔥 CLEAN TEXT
+        // 🧹 SMART CLEAN (Preserve Newlines for Slide Markers)
+        // Instead of replacing ALL whitespace, we just trim trailing spaces on lines
         extractedText = extractedText
-            .replace(/\s+/g, " ")
-            .trim();
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .join('\n');
 
-        console.log("PPT length:", extractedText.length);
+        console.log("✅ PPT extracted. Length:", extractedText.length);
 
         if (extractedText.length > 50) {
-            console.log("✅ PPT extracted");
             return extractedText;
         }
 
-        console.warn("⚠️ PPT empty");
-        return "";
-
     } catch (error) {
         console.error("❌ PPT extraction failed:", error.message);
-        return "";
     }
+    return "";
 }
+
+
+
         
  // =====================
 // ✅ DOCX FIX
