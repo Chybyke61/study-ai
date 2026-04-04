@@ -1978,12 +1978,12 @@ app.post("/generate-cbt", async (req, res) => {
         //  2. PICK RANDOM CHUNKS
         const chunks = data
             .sort(() => 0.5 - Math.random())
-            .slice(0, Math.min(8, data.length))
-            .map(c => c.content.slice(0, 500))
+            .slice(0, Math.min(20, data.length))
+            .map(c => c.content.slice(0, 700))
             
         
         // DON'T REPEAT QUESTIONS
-        const uniqueChunks = [...new Set(chunks)].slice(0, 8);
+        const uniqueChunks = [...new Set(chunks)];
 
         //  3. PROMPT (NO HALLUCINATION)
         const prompt = `
@@ -2021,10 +2021,35 @@ TEXT:
 ${uniqueChunks.join("\n\n")}
 `;
 
-        const response = await generateCBTContent(prompt);
+        let response = await generateCBTContent(prompt);
 
-        res.json({ questions: response });
+// ✅ COUNT QUESTIONS
+let count = (response.match(/Question:/g) || []).length;
 
+if (count < numQuestions) {
+    console.warn(`⚠️ Only ${count}/${numQuestions} → retrying`);
+
+    const remaining = numQuestions - count;
+
+    const retryPrompt = `
+Generate ${remaining} NEW CBT MCQs.
+
+RULES:
+- Do NOT repeat previous questions
+- Same format
+- Same text
+
+TEXT:
+${uniqueChunks.join("\n\n")}
+`;
+
+    const extra = await generateCBTContent(retryPrompt);
+
+    response += "\n\n" + extra;
+}
+
+res.json({ questions: response });
+        
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "CBT generation failed" });
