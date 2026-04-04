@@ -1909,7 +1909,7 @@ app.post("/generate-cbt", async (req, res) => {
             return res.status(400).json({ error: "Missing data" });
         }
 
-        // 🔥 1. GET CHUNKS FROM SUPABASE
+        //  1. GET CHUNKS FROM SUPABASE
         const { data, error } = await supabase
             .from("book_chunks")
             .select("content")
@@ -1920,44 +1920,59 @@ app.post("/generate-cbt", async (req, res) => {
             return res.status(404).json({ error: "No content found" });
         }
 
-        // 🔥 2. PICK RANDOM CHUNKS
+        //  2. PICK RANDOM CHUNKS
         const chunks = data
             .sort(() => 0.5 - Math.random())
             .slice(0, Math.min(20, data.length))
             .map(c => c.content);
+        
+        // DON'T REPEAT QUESTIONS
+        const uniqueChunks = [...new Set(chunks)];
 
-        // 🔥 3. PROMPT (NO HALLUCINATION)
+        //  3. PROMPT (NO HALLUCINATION)
         const prompt = `
-You are an expert instructional designer creating a Computer-Based Test (CBT).
+You are an expert exam setter designing a high-quality Computer-Based Test (CBT).
 
-Your task is to generate exactly ${numQuestions} multiple-choice questions (MCQs) based STRICTLY on the source text provided below.
+Generate exactly ${numQuestions} multiple-choice questions (MCQs) based STRICTLY on the source text.
 
 CRITICAL RULES:
-1. ZERO OUTSIDE KNOWLEDGE: Use only the source text.
-2. NO ASSUMPTIONS: Do not invent facts.
-3. PLAUSIBLE DISTRACTORS: All options must be believable.
-4. NO CHIT-CHAT: Output only the format.
+1. USE ONLY THE TEXT — no external knowledge.
+2. NO DUPLICATE QUESTIONS — each must test a different idea.
+3. STRONG DISTRACTORS — wrong options must be realistic and close to correct.
+4. AVOID TRIVIAL QUESTIONS — do not ask obvious or overly simple questions.
 5. ALWAYS GENERATE EXACTLY ${numQuestions} QUESTIONS.
 
-TARGET DIFFICULTY:
-${difficulty === "easy" ? "EASY: Direct recall." :
-difficulty === "medium" ? "MEDIUM: Conceptual understanding." :
-"HARD: Multi-step reasoning using multiple parts of the text."}
+COGNITIVE LEVELS:
+${difficulty === "easy" 
+? "Focus on recall and basic understanding."
+: difficulty === "medium"
+? "Mix recall and reasoning. Include interpretation and comparison."
+: "Focus on deep reasoning, combining multiple ideas, cause-effect, and implications."}
 
-FORMAT STRICTLY (DO NOT CHANGE FORMAT):
+QUALITY RULES:
+- Some questions must require linking TWO or more parts of the text.
+- Some questions should test WHY or HOW, not just WHAT.
+- Avoid repeating the same sentence structure.
+- Vary question styles (definition, application, scenario-based).
+
+FORMAT STRICTLY:
+
 Question:
-[Write the question here]
-A. [Option A]
-B. [Option B]
-C. [Option C]
-D. [Option D]
-Answer: [Write ONLY A or B or C or D]
-Explanation: [Explain based only on the text]
+[Clear, well-structured question]
 
-(Repeat for each question with NO separators like ---)
+A. [Plausible option]
+B. [Plausible option]
+C. [Plausible option]
+D. [Plausible option]
+
+Answer: [ONLY A or B or C or D]
+Explanation: [Explain WHY correct and WHY others are wrong based ONLY on the text]
+
+(Repeat for all questions, no separators)
 
 SOURCE TEXT:
 ${chunks.join("\n\n")}
+${uniqueChunks.join("\n\n")}
 `;
 
         const response = await safeGenerate(prompt);
