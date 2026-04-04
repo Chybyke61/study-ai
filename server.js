@@ -1987,55 +1987,40 @@ app.post("/generate-cbt", async (req, res) => {
 
         //  3. PROMPT (NO HALLUCINATION)
         const prompt = `
-You are a professional exam setter creating a HIGH-QUALITY CBT exam.
-
 Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the text.
 
-🎯 QUESTION STYLE REQUIREMENTS:
-- DO NOT start most questions with "What is"
-- Use a MIX of:
-  • scenario-based questions
-  • application questions
-  • cause-effect questions
-  • comparison questions
-  • short case-style questions
-- Only 20–30% can be direct definition questions
-
-🧠 DIFFICULTY:
-${difficulty === "easy" 
-? "Focus on understanding and simple application"
-: difficulty === "medium"
-? "Test reasoning, relationships, and interpretation"
-: "Test deep reasoning, multi-step thinking, and analysis"}
-
-📌 STRICT RULES:
-- Use ONLY the provided text
+IMPORTANT:
+- Use ONLY the text provided
 - Do NOT invent information
-- Each question must test a DIFFERENT concept
-- Avoid repeating wording patterns
-- Make all options plausible
-- Ensure only ONE correct answer
-- Frame some questions as real-life lab or clinical situations
+- Each question must test a DIFFERENT idea
+- Avoid repeating similar questions
+- Avoid repeating the same answer options across questions
 
-🚫 AVOID:
-- Repeating “What is…” format
-- Copy-paste sentences from text
-- Obvious or giveaway answers
+QUESTION STYLE:
+- Use scenario-based, application, and reasoning questions
+- Avoid starting with "What is"
+- Do NOT generate True/False questions
 
-FORMAT STRICTLY (DO NOT CHANGE):
+OPTIONS:
+- Provide exactly 4 options (A–D)
+- Only ONE correct answer
+
+FORMAT (STRICT):
 
 Question:
-[Write the question]
+...
 
-A. [Option]
-B. [Option]
-C. [Option]
-D. [Option]
+A. ...
+B. ...
+C. ...
+D. ...
 
-Answer: [ONLY A or B or C or D]
-Explanation: [Based only on the text]
+Answer: A/B/C/D
 
-(Repeat for all questions, no separators)
+Explanation:
+- State WHY the correct answer is correct
+- Briefly explain WHY the other options are wrong
+- Use ONLY the text
 
 TEXT:
 ${uniqueChunks.join("\n\n")}
