@@ -1987,20 +1987,40 @@ app.post("/generate-cbt", async (req, res) => {
 
         //  3. PROMPT (NO HALLUCINATION)
         const prompt = `
-Generate exactly ${numQuestions} CBT MCQs STRICTLY from the text.
+You are a professional exam setter creating a HIGH-QUALITY CBT exam.
 
-RULES:
-- Use ONLY the text
-- No duplicate questions
-- Make options realistic
-- Avoid trivial questions
+Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the text.
 
-DIFFICULTY:
+🎯 QUESTION STYLE REQUIREMENTS:
+- DO NOT start most questions with "What is"
+- Use a MIX of:
+  • scenario-based questions
+  • application questions
+  • cause-effect questions
+  • comparison questions
+  • short case-style questions
+- Only 20–30% can be direct definition questions
+
+🧠 DIFFICULTY:
 ${difficulty === "easy" 
-? "Recall"
+? "Focus on understanding and simple application"
 : difficulty === "medium"
-? "Concept + reasoning"
-: "Deep reasoning across multiple ideas"}
+? "Test reasoning, relationships, and interpretation"
+: "Test deep reasoning, multi-step thinking, and analysis"}
+
+📌 STRICT RULES:
+- Use ONLY the provided text
+- Do NOT invent information
+- Each question must test a DIFFERENT concept
+- Avoid repeating wording patterns
+- Make all options plausible
+- Ensure only ONE correct answer
+- Frame some questions as real-life lab or clinical situations
+
+🚫 AVOID:
+- Repeating “What is…” format
+- Copy-paste sentences from text
+- Obvious or giveaway answers
 
 FORMAT STRICTLY (DO NOT CHANGE):
 
