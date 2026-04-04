@@ -783,7 +783,7 @@ async function generateCBTContent(prompt) {
             messages: [{ role: "user", content: trimmedPrompt }],
             model: "llama-3.1-8b-instant",
             temperature: 0.3,
-            max_tokens: 1200
+            max_tokens: 2500
         });
 
         return chat.choices[0].message.content;
