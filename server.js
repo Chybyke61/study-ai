@@ -1900,6 +1900,70 @@ app.get("/books", async (req, res) => {
     res.status(404).json({ error: "Not found" });
 });*/
 
+app.post("/generate-cbt", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const { filename, numQuestions, difficulty } = req.body;
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing data" });
+        }
+
+        // 🔥 1. GET CHUNKS FROM SUPABASE
+        const { data, error } = await supabase
+            .from("book_chunks")
+            .select("content")
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        if (error || !data.length) {
+            return res.status(404).json({ error: "No content found" });
+        }
+
+        // 🔥 2. PICK RANDOM CHUNKS
+        const chunks = data
+            .sort(() => 0.5 - Math.random())
+            .slice(0, Math.min(20, data.length))
+            .map(c => c.content);
+
+        // 🔥 3. PROMPT (NO HALLUCINATION)
+        const prompt = `
+You are generating CBT questions STRICTLY from the text below.
+
+RULES:
+- Use ONLY the text
+- Do NOT use outside knowledge
+- If answer is not in text, skip
+- Generate ${numQuestions} MCQs
+
+DIFFICULTY:
+${difficulty === "easy" ? "Direct recall" :
+  difficulty === "medium" ? "Concept understanding" :
+  "Hard reasoning, combine ideas"}
+
+FORMAT:
+Question:
+A.
+B.
+C.
+D.
+Answer:
+Explanation:
+
+TEXT:
+${chunks.join("\n\n")}
+`;
+
+        const response = await safeGenerate(prompt);
+
+        res.json({ questions: response });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "CBT generation failed" });
+    }
+});
+
 app.delete("/delete-book/:filename", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
