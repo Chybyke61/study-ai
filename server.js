@@ -1928,29 +1928,35 @@ app.post("/generate-cbt", async (req, res) => {
 
         // 🔥 3. PROMPT (NO HALLUCINATION)
         const prompt = `
-You are generating CBT questions STRICTLY from the text below.
+You are an expert instructional designer creating a Computer-Based Test (CBT).
 
-RULES:
-- Use ONLY the text
-- Do NOT use outside knowledge
-- If answer is not in text, skip
-- Generate ${numQuestions} MCQs
+Your task is to generate exactly ${numQuestions} multiple-choice questions (MCQs) based STRICTLY on the source text provided below.
 
-DIFFICULTY:
-${difficulty === "easy" ? "Direct recall" :
-  difficulty === "medium" ? "Concept understanding" :
-  "Hard reasoning, combine ideas"}
+CRITICAL RULES:
+1. ZERO OUTSIDE KNOWLEDGE: Use only the source text.
+2. NO ASSUMPTIONS: Do not invent facts.
+3. PLAUSIBLE DISTRACTORS: All options must be believable.
+4. NO CHIT-CHAT: Output only the format.
+5. ALWAYS GENERATE EXACTLY ${numQuestions} QUESTIONS.
 
-FORMAT:
+TARGET DIFFICULTY:
+${difficulty === "easy" ? "EASY: Direct recall." :
+difficulty === "medium" ? "MEDIUM: Conceptual understanding." :
+"HARD: Multi-step reasoning using multiple parts of the text."}
+
+FORMAT STRICTLY (DO NOT CHANGE FORMAT):
 Question:
-A.
-B.
-C.
-D.
-Answer:
-Explanation:
+[Write the question here]
+A. [Option A]
+B. [Option B]
+C. [Option C]
+D. [Option D]
+Answer: [Write ONLY A or B or C or D]
+Explanation: [Explain based only on the text]
 
-TEXT:
+(Repeat for each question with NO separators like ---)
+
+SOURCE TEXT:
 ${chunks.join("\n\n")}
 `;
 
