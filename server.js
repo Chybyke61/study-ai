@@ -741,32 +741,87 @@ return {
     }
 }
 
-// 🔥 SMART QUIZ QUERY ENGINE
+// SMART QUIZ QUERY ENGINE
 function smartQuizQuery(query, context = "") {
     const lower = query.toLowerCase().trim();
 
-    // 🚫 Extremely vague input
+    // Extremely vague input
     if (lower.length < 4) {
         return "Generate a quiz based on the key concepts in the uploaded material";
     }
 
-    // 🔥 vague words
+    // vague words
     if (["this", "that", "it", "something", "stuff"].includes(lower)) {
         return "Generate a quiz from the main topics and key concepts in the uploaded material";
     }
 
-    // 🔥 vague phrases
+    // vague phrases
     if (lower.includes("this book") || lower.includes("this topic")) {
         return "Generate a quiz from the important concepts, definitions, and applications in the uploaded material";
     }
 
-    // 🔥 "quiz this"
+    // "quiz this"
     if (lower.includes("quiz")) {
         return query + " with important concepts, definitions, and exam-style questions";
     }
 
     // ✅ normal query → enhance it
     return query + " with key concepts, applications, and exam-style questions";
+}
+
+//CBT FALL BACK
+async function generateCBTContent(prompt) {
+    const MAX_LENGTH = 12000;
+    const trimmedPrompt = prompt.length > MAX_LENGTH 
+        ? prompt.slice(0, MAX_LENGTH) 
+        : prompt;
+
+    try {
+        console.log("🔥 CBT → Groq");
+
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: trimmedPrompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.3,
+            max_tokens: 1200
+        });
+
+        return chat.choices[0].message.content;
+
+    } catch (err) {
+        console.warn("⚠️ CBT Groq failed → Gemini fallback");
+
+        try {
+            const result = await Promise.race([
+                geminiGenerate(trimmedPrompt),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error("Gemini timeout")), 8000)
+                )
+            ]);
+
+            return result;
+
+        } catch (err2) {
+            console.error("❌ CBT Gemini failed → fallback questions");
+
+            return generateBasicCBT();
+        }
+    }
+}
+
+function generateBasicCBT() {
+    return `
+Question:
+What is the main idea of the text?
+
+A. First concept
+B. Second concept
+C. Third concept
+D. Fourth concept
+
+Answer: A
+Explanation: Based on available content.
+`;
 }
 
 // --- ROUTES ---
@@ -1923,59 +1978,50 @@ app.post("/generate-cbt", async (req, res) => {
         //  2. PICK RANDOM CHUNKS
         const chunks = data
             .sort(() => 0.5 - Math.random())
-            .slice(0, Math.min(20, data.length))
-            .map(c => c.content);
+            .slice(0, Math.min(8, data.length))
+            .map(c => c.content.slice(0, 500))
+            
         
         // DON'T REPEAT QUESTIONS
-        const uniqueChunks = [...new Set(chunks)];
+        const uniqueChunks = [...new Set(chunks)].slice(0, 8);
 
         //  3. PROMPT (NO HALLUCINATION)
         const prompt = `
-You are an expert exam setter designing a high-quality Computer-Based Test (CBT).
+Generate exactly ${numQuestions} CBT MCQs STRICTLY from the text.
 
-Generate exactly ${numQuestions} multiple-choice questions (MCQs) based STRICTLY on the source text.
+RULES:
+- Use ONLY the text
+- No duplicate questions
+- Make options realistic
+- Avoid trivial questions
 
-CRITICAL RULES:
-1. USE ONLY THE TEXT — no external knowledge.
-2. NO DUPLICATE QUESTIONS — each must test a different idea.
-3. STRONG DISTRACTORS — wrong options must be realistic and close to correct.
-4. AVOID TRIVIAL QUESTIONS — do not ask obvious or overly simple questions.
-5. ALWAYS GENERATE EXACTLY ${numQuestions} QUESTIONS.
-
-COGNITIVE LEVELS:
+DIFFICULTY:
 ${difficulty === "easy" 
-? "Focus on recall and basic understanding."
+? "Recall"
 : difficulty === "medium"
-? "Mix recall and reasoning. Include interpretation and comparison."
-: "Focus on deep reasoning, combining multiple ideas, cause-effect, and implications."}
+? "Concept + reasoning"
+: "Deep reasoning across multiple ideas"}
 
-QUALITY RULES:
-- Some questions must require linking TWO or more parts of the text.
-- Some questions should test WHY or HOW, not just WHAT.
-- Avoid repeating the same sentence structure.
-- Vary question styles (definition, application, scenario-based).
-
-FORMAT STRICTLY:
+FORMAT STRICTLY (DO NOT CHANGE):
 
 Question:
-[Clear, well-structured question]
+[Write the question]
 
-A. [Plausible option]
-B. [Plausible option]
-C. [Plausible option]
-D. [Plausible option]
+A. [Option]
+B. [Option]
+C. [Option]
+D. [Option]
 
 Answer: [ONLY A or B or C or D]
-Explanation: [Explain WHY correct and WHY others are wrong based ONLY on the text]
+Explanation: [Based only on the text]
 
 (Repeat for all questions, no separators)
 
-SOURCE TEXT:
-${chunks.join("\n\n")}
+TEXT:
 ${uniqueChunks.join("\n\n")}
 `;
 
-        const response = await safeGenerate(prompt);
+        const response = await generateCBTContent(prompt);
 
         res.json({ questions: response });
 
