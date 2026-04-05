@@ -2014,23 +2014,29 @@ ${uniqueChunks.join("\n\n")}
             .replace(/```json|```/g, "")
             .trim();
 
-        let questionsJson;
+        let questionsJson = [];
 
-        try {
-            const parsed = JSON.parse(outputText);
-            questionsJson = parsed.questions || [];
+try {
+    const cleaned = outputText
+        .replace(/```json|```/g, "")
+        .trim();
 
-            if (!questionsJson.length) {
-                throw new Error("Empty questions array");
-            }
+    const parsed = JSON.parse(cleaned);
 
-        } catch (e) {
-            console.error("❌ JSON Parse failed:", e);
-            console.log("Raw output:", outputText);
-            return res.status(500).json({
-                error: "Failed to generate valid CBT format. Try again."
-            });
-        }
+    questionsJson = parsed.questions || [];
+
+    if (!Array.isArray(questionsJson) || questionsJson.length === 0) {
+        throw new Error("Invalid questions array");
+    }
+
+} catch (e) {
+    console.error("❌ JSON Parse failed:", e);
+    console.log("RAW OUTPUT:", outputText);
+
+    return res.status(500).json({
+        error: "AI returned bad format"
+    });
+}
 
         // 6. ENSURE EXACT NUMBER (simple + safe)
         questionsJson = questionsJson.slice(0, numQuestions);
