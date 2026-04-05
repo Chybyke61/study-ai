@@ -1978,7 +1978,7 @@ app.post("/generate-cbt", async (req, res) => {
         //  2. PICK RANDOM CHUNKS
         const chunks = data
             .sort(() => 0.5 - Math.random())
-            .slice(0, Math.min(20, data.length))
+            .slice(0, Math.min(15, data.length))
             .map(c => c.content.slice(0, 700))
             
         
