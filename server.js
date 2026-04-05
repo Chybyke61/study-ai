@@ -2067,7 +2067,7 @@ TEXT:
 ${uniqueChunks.join("\n\n")}
 `;
 
-        let response = await generateCBTContent(prompt);
+        //let response = await generateCBTContent(prompt);
 
         function removeDuplicateQuestions(rawText) {
     const blocks = rawText.split("Question:");
@@ -2120,6 +2120,7 @@ ${uniqueChunks.join("\n\n")}
     const extra = await generateCBTContent(extraPrompt);
 
     response += "\n\n" + extra;
+    response = removeDuplicateQuestions(response);
     attempts++;
 }
         
