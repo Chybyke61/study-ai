@@ -1986,7 +1986,7 @@ app.post("/generate-cbt", async (req, res) => {
         const uniqueChunks = [...new Set(chunks)];
 
         //  3. PROMPT (NO HALLUCINATION)
-        const prompt = `
+       /* const prompt = `
 Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the text.
 
 IMPORTANT:
@@ -2040,6 +2040,63 @@ Explanation:
 - State WHY the correct answer is correct
 - Briefly explain WHY the other options are wrong
 - Use ONLY the text
+
+TEXT:
+${uniqueChunks.join("\n\n")}
+`;*/
+
+        const prompt = `
+Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the provided text.
+
+IMPORTANT RULES:
+- Use ONLY the provided text. Do NOT invent or assume outside information.
+- Each question must test a DIFFERENT concept from the text.
+- Avoid repeating similar questions, wording, or answer patterns.
+- Do NOT generate True/False questions.
+- Avoid starting questions with "What is...".
+
+DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
+${difficulty === "easy" 
+? `
+- Focus on direct recall and basic understanding.
+- Questions should test clear facts from the text.
+` 
+: difficulty === "medium" 
+? `
+- Focus on understanding, interpretation, and simple application.
+- Include scenario-based and reasoning questions where possible.
+` 
+: `
+HARD MODE:
+- Require MULTI-STEP reasoning and deep understanding
+- Combine multiple ideas from different parts of the text
+- Use scenario-based or problem-solving questions
+- Include subtle traps (options that are close but not fully correct)
+- At least 50% must require linking multiple concepts
+- Use exam phrasing like "most appropriate", "most likely", "best explanation"
+- Avoid direct recall questions completely
+`}
+
+OPTIONS REQUIREMENTS:
+- Provide exactly 4 options labeled A. B. C. D.
+- Only ONE correct answer
+- All options must be similar in structure and difficulty
+- Avoid repeating the same type of options across questions
+
+OUTPUT FORMAT (STRICT):
+
+Question:
+[Clear, well-structured question]
+
+A. [Option A]
+B. [Option B]
+C. [Option C]
+D. [Option D]
+
+Answer: [A/B/C/D]
+
+Explanation:
+[1–3 lines explaining why the correct answer is right and why others are wrong]
 
 TEXT:
 ${uniqueChunks.join("\n\n")}
