@@ -1930,6 +1930,120 @@ if (allChunks.length === 0) {
     }
 });
 
+app.post("/generate-cbt", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        const { filename, numQuestions, difficulty } = req.body;
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing data" });
+        }
+
+        // 1. GET CHUNKS FROM SUPABASE
+        const { data, error } = await supabase
+            .from("book_chunks")
+            .select("content")
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        if (error || !data.length) {
+            return res.status(404).json({ error: "No content found" });
+        }
+
+        // 2. PICK RANDOM CHUNKS (lightweight + efficient)
+        const chunks = data
+            .sort(() => 0.5 - Math.random())
+            .slice(0, Math.min(15, data.length))
+            .map(c => c.content.slice(0, 700));
+
+        // Remove duplicate chunks quickly
+        const uniqueChunks = [...new Set(chunks)];
+
+        // 3. PROMPT (STRICT JSON OUTPUT)
+        const prompt = `
+Act as an expert examiner. Generate exactly ${numQuestions} multiple-choice questions based ONLY on the provided text.
+
+DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
+${difficulty === "easy" 
+? "- Focus on clear facts and direct understanding." 
+: difficulty === "medium" 
+? "- Focus on understanding, interpretation, and simple application." 
+: "- HARD MODE: Require multi-step reasoning and subtle distractors."}
+
+RULES:
+1. No "What is" or True/False questions.
+2. Each question MUST test a different concept.
+3. Use ONLY the provided text.
+4. Each option MUST start with A., B., C., D.
+5. The answer MUST be ONLY the letter (A, B, C, or D).
+6. Return ONLY valid JSON (no markdown, no extra text).
+
+FORMAT:
+{
+  "questions": [
+    {
+      "question": "Question text",
+      "options": [
+        "A. Option",
+        "B. Option",
+        "C. Option",
+        "D. Option"
+      ],
+      "answer": "A",
+      "explanation": "Brief explanation based on the text"
+    }
+  ]
+}
+
+TEXT:
+${uniqueChunks.join("\n\n")}
+`;
+
+        console.log(`🔥 Generating ${difficulty} CBT...`);
+
+        // 4. GENERATE
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+        });
+
+        // 5. CLEAN OUTPUT
+        let outputText = chat.choices[0].message.content
+            .replace(/```json|```/g, "")
+            .trim();
+
+        let questionsJson;
+
+        try {
+            const parsed = JSON.parse(outputText);
+            questionsJson = parsed.questions || [];
+
+            if (!questionsJson.length) {
+                throw new Error("Empty questions array");
+            }
+
+        } catch (e) {
+            console.error("❌ JSON Parse failed:", e);
+            console.log("Raw output:", outputText);
+            return res.status(500).json({
+                error: "Failed to generate valid CBT format. Try again."
+            });
+        }
+
+        // 6. ENSURE EXACT NUMBER (simple + safe)
+        questionsJson = questionsJson.slice(0, numQuestions);
+
+        // 7. FINAL RESPONSE
+        res.json({ questions: questionsJson });
+
+    } catch (err) {
+        console.error("CBT Route Error:", err);
+        res.status(500).json({ error: "CBT generation failed" });
+    }
+});
+
 app.get("/books", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
@@ -1941,198 +2055,6 @@ app.get("/books", async (req, res) => {
     }
 });
 
-/*app.delete("/delete-book/:name", async (req, res) => {
-    const name = decodeURIComponent(req.params.name);
-    const userId = req.headers["x-user-id"];
-
-    if (documentStore[userId] && documentStore[userId][name]) {
-        delete documentStore[userId][name];
-        delete keywordIndices[userId]?.[name];
-        delete vectorIndices[userId]?.[name];
-        saveCache();
-        return res.json({ success: true });
-    }
-    res.status(404).json({ error: "Not found" });
-});*/
-
-app.post("/generate-cbt", async (req, res) => {
-    try {
-        const userId = req.headers["x-user-id"];
-        const { filename, numQuestions, difficulty } = req.body;
-
-        if (!userId || !filename) {
-            return res.status(400).json({ error: "Missing data" });
-        }
-
-        //  1. GET CHUNKS FROM SUPABASE
-        const { data, error } = await supabase
-            .from("book_chunks")
-            .select("content")
-            .eq("user_id", userId)
-            .eq("filename", filename);
-
-        if (error || !data.length) {
-            return res.status(404).json({ error: "No content found" });
-        }
-
-        //  2. PICK RANDOM CHUNKS
-        const chunks = data
-            .sort(() => 0.5 - Math.random())
-            .slice(0, Math.min(15, data.length))
-            .map(c => c.content.slice(0, 700))
-            
-        
-        // DON'T REPEAT QUESTIONS
-        function getDiverseChunks(chunks) {
-    const result = [];
-
-    for (let chunk of chunks) {
-        const isSimilar = result.some(existing =>
-            existing.slice(0, 120) === chunk.slice(0, 120)
-        );
-
-        if (!isSimilar) {
-            result.push(chunk);
-        }
-    }
-
-    return result;
-}
-
-const uniqueChunks = getDiverseChunks(chunks);
-
-        
-        //  3. PROMPT (NO HALLUCINATION)
-  const prompt = `
-Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the provided text.
-
-IMPORTANT RULES:
-- Use ONLY the provided text. Do NOT invent or assume outside information.
-- Each question must test a DIFFERENT concept from the text.
-- Avoid repeating similar questions, wording, or answer patterns.
-- Do NOT generate True/False questions.
-- Avoid starting questions with "What is...".
-
-DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
-${difficulty === "easy" 
-? `
-- Focus on direct recall and basic understanding.
-- Questions should test clear facts from the text.
-` 
-: difficulty === "medium" 
-? `
-- Focus on understanding, interpretation, and simple application.
-- Include scenario-based and reasoning questions where possible.
-` 
-: `
-HARD MODE:
-- Require MULTI-STEP reasoning and deep understanding
-- Combine multiple ideas from different parts of the text
-- Use scenario-based or problem-solving questions
-- Include subtle traps (options that are close but not fully correct)
-- At least 50% must require linking multiple concepts
-- Use exam phrasing like "most appropriate", "most likely", "best explanation"
-- Avoid direct recall questions completely
-`}
-
-OPTIONS REQUIREMENTS:
-- Provide exactly 4 options labeled A. B. C. D.
-- Only ONE correct answer
-- All options must be similar in structure and difficulty
-- Avoid repeating the same type of options across questions
-
-ANTI-REPETITION RULES:
-- Each question must test a completely DIFFERENT concept
-- Do NOT rephrase the same idea
-- Do NOT reuse similar scenarios
-- Avoid testing the same topic twice
-- Ensure every question comes from a different part of the text
-
-OUTPUT FORMAT (STRICT):
-
-Question:
-[Clear, well-structured question]
-
-A. [Option A]
-B. [Option B]
-C. [Option C]
-D. [Option D]
-
-Answer: [A/B/C/D]
-
-Explanation:
-[1–3 lines explaining why the correct answer is right and why others are wrong]
-
-TEXT:
-${uniqueChunks.join("\n\n")}
-`;
-
-        //let response = await generateCBTContent(prompt);
-
-        function removeDuplicateQuestions(rawText) {
-    const blocks = rawText.split("Question:");
-    const seen = new Set();
-    const unique = [];
-
-    for (let block of blocks) {
-        const trimmed = block.trim();
-        if (!trimmed) continue;
-
-        const firstLine = trimmed.split("\n")[0]
-            .toLowerCase()
-            .replace(/[^\w\s]/g, "")
-            .split(" ")
-            .slice(0, 12)
-            .join(" ");
-
-        if (!seen.has(firstLine)) {
-            seen.add(firstLine);
-            unique.push("Question:\n" + trimmed);
-        }
-    }
-
-    return unique.join("\n\n");
-        }
-
-// ✅ COUNT QUESTIONS
-        let attempts = 0;
-let maxAttempts = 2;
-
-let response = await generateCBTContent(prompt);
-
-while (attempts < maxAttempts) {
-    let count = (response.match(/Question:/g) || []).length;
-
-    if (count >= numQuestions) break;
-
-    const remaining = numQuestions - count;
-
-    const extraPrompt = `
-Generate ONLY ${remaining} NEW UNIQUE questions.
-
-DO NOT repeat previous ones.
-Same format.
-
-TEXT:
-${uniqueChunks.join("\n\n")}
-`;
-
-    const extra = await generateCBTContent(extraPrompt);
-
-    response += "\n\n" + extra;
-    response = removeDuplicateQuestions(response);
-    attempts++;
-}
-        
-let cleaned = removeDuplicateQuestions(response);
-
-res.json({ questions: cleaned });
-        
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "CBT generation failed" });
-    }
-});
 
 app.delete("/delete-book/:filename", async (req, res) => {
     try {
