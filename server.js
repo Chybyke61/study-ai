@@ -2001,6 +2001,25 @@ QUESTION STYLE:
 - Avoid starting with "What is"
 - Do NOT generate True/False questions
 
+${difficulty === "easy" 
+? "Focus on recall and basic understanding"
+: difficulty === "medium"
+? "Test understanding, interpretation, and simple reasoning"
+: `
+HARD MODE:
+- Questions must require MULTI-STEP reasoning
+- Combine two or more ideas from the text
+- Use scenario-based or problem-solving questions
+- Include subtle traps (options that look correct but are not fully correct)
+- Avoid obvious answers
+- Make distractors very close to the correct answer
+- Require interpretation, not direct recall
+`}
+HARD MODE EXTRA RULES:
+- At least 50% of questions must require linking multiple parts of the text
+- Include “most appropriate”, “best explanation”, or “most likely” type questions
+- Avoid direct definition questions
+
 OPTIONS:
 - Provide exactly 4 options (A–D)
 - Only ONE correct answer
