@@ -1983,69 +1983,27 @@ app.post("/generate-cbt", async (req, res) => {
             
         
         // DON'T REPEAT QUESTIONS
-        const uniqueChunks = [...new Set(chunks)];
+        function getDiverseChunks(chunks) {
+    const result = [];
 
+    for (let chunk of chunks) {
+        const isSimilar = result.some(existing =>
+            existing.slice(0, 120) === chunk.slice(0, 120)
+        );
+
+        if (!isSimilar) {
+            result.push(chunk);
+        }
+    }
+
+    return result;
+}
+
+const uniqueChunks = getDiverseChunks(chunks);
+
+        
         //  3. PROMPT (NO HALLUCINATION)
-       /* const prompt = `
-Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the text.
-
-IMPORTANT:
-- Use ONLY the text provided
-- Do NOT invent information
-- Each question must test a DIFFERENT idea
-- Avoid repeating similar questions
-- Avoid repeating the same answer options across questions
-
-QUESTION STYLE:
-- Use scenario-based, application, and reasoning questions
-- Avoid starting with "What is"
-- Do NOT generate True/False questions
-
-${difficulty === "easy" 
-? "Focus on recall and basic understanding"
-: difficulty === "medium"
-? "Test understanding, interpretation, and simple reasoning"
-: `
-HARD MODE:
-- Questions must require MULTI-STEP reasoning
-- Combine two or more ideas from the text
-- Use scenario-based or problem-solving questions
-- Include subtle traps (options that look correct but are not fully correct)
-- Avoid obvious answers
-- Make distractors very close to the correct answer
-- Require interpretation, not direct recall
-`}
-HARD MODE EXTRA RULES:
-- At least 50% of questions must require linking multiple parts of the text
-- Include “most appropriate”, “best explanation”, or “most likely” type questions
-- Avoid direct definition questions
-
-OPTIONS:
-- Provide exactly 4 options (A–D)
-- Only ONE correct answer
-
-FORMAT (STRICT):
-
-Question:
-...
-
-A. ...
-B. ...
-C. ...
-D. ...
-
-Answer: A/B/C/D
-
-Explanation:
-- State WHY the correct answer is correct
-- Briefly explain WHY the other options are wrong
-- Use ONLY the text
-
-TEXT:
-${uniqueChunks.join("\n\n")}
-`;*/
-
-        const prompt = `
+  const prompt = `
 Generate exactly ${numQuestions} multiple-choice questions STRICTLY from the provided text.
 
 IMPORTANT RULES:
@@ -2083,6 +2041,13 @@ OPTIONS REQUIREMENTS:
 - All options must be similar in structure and difficulty
 - Avoid repeating the same type of options across questions
 
+ANTI-REPETITION RULES:
+- Each question must test a completely DIFFERENT concept
+- Do NOT rephrase the same idea
+- Do NOT reuse similar scenarios
+- Avoid testing the same topic twice
+- Ensure every question comes from a different part of the text
+
 OUTPUT FORMAT (STRICT):
 
 Question:
@@ -2104,32 +2069,63 @@ ${uniqueChunks.join("\n\n")}
 
         let response = await generateCBTContent(prompt);
 
-// ✅ COUNT QUESTIONS
-let count = (response.match(/Question:/g) || []).length;
+        function removeDuplicateQuestions(rawText) {
+    const blocks = rawText.split("Question:");
+    const seen = new Set();
+    const unique = [];
 
-if (count < numQuestions) {
-    console.warn(`⚠️ Only ${count}/${numQuestions} → retrying`);
+    for (let block of blocks) {
+        const trimmed = block.trim();
+        if (!trimmed) continue;
+
+        const firstLine = trimmed.split("\n")[0]
+            .toLowerCase()
+            .replace(/[^\w\s]/g, "")
+            .split(" ")
+            .slice(0, 12)
+            .join(" ");
+
+        if (!seen.has(firstLine)) {
+            seen.add(firstLine);
+            unique.push("Question:\n" + trimmed);
+        }
+    }
+
+    return unique.join("\n\n");
+        }
+
+// ✅ COUNT QUESTIONS
+        let attempts = 0;
+let maxAttempts = 2;
+
+let response = await generateCBTContent(prompt);
+
+while (attempts < maxAttempts) {
+    let count = (response.match(/Question:/g) || []).length;
+
+    if (count >= numQuestions) break;
 
     const remaining = numQuestions - count;
 
-    const retryPrompt = `
-Generate ${remaining} NEW CBT MCQs.
+    const extraPrompt = `
+Generate ONLY ${remaining} NEW UNIQUE questions.
 
-RULES:
-- Do NOT repeat previous questions
-- Same format
-- Same text
+DO NOT repeat previous ones.
+Same format.
 
 TEXT:
 ${uniqueChunks.join("\n\n")}
 `;
 
-    const extra = await generateCBTContent(retryPrompt);
+    const extra = await generateCBTContent(extraPrompt);
 
     response += "\n\n" + extra;
+    attempts++;
 }
+        
+let cleaned = removeDuplicateQuestions(response);
 
-res.json({ questions: response });
+res.json({ questions: cleaned });
         
     } catch (err) {
         console.error(err);
