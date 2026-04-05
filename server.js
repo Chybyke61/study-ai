@@ -2002,17 +2002,24 @@ ${uniqueChunks.join("\n\n")}
         console.log(`🔥 Generating ${difficulty} CBT...`);
 
         // 4. GENERATE
-        const chat = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.1-8b-instant",
-            temperature: 0.3,
-            response_format: { type: "json_object" }
-        });
+        let outputText = "";
 
-        // 5. CLEAN OUTPUT
-        let outputText = chat.choices[0].message.content
-            .replace(/```json|```/g, "")
-            .trim();
+try {
+    const chat = await groq.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: "llama-3.1-8b-instant",
+        temperature: 0.3,
+        response_format: { type: "json_object" }
+    });
+
+    outputText = chat.choices?.[0]?.message?.content || "";
+
+} catch (err) {
+    console.error("❌ Groq failed:", err);
+    return res.status(500).json({ error: "AI generation failed" });
+}
+
+        console.log("📦 RAW AI OUTPUT:", outputText);
 
         let questionsJson = [];
 
