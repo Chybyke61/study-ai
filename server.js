@@ -2138,9 +2138,9 @@ ${contextText}
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
         // 4. GENERATE
-        let outputText = "";
+     /*   let outputText = "";
 
-        try {
+      try {
             const chat = await groq.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
                 model: "llama-3.1-8b-instant",
@@ -2154,7 +2154,49 @@ ${contextText}
         } catch (err) {
             console.warn("⚠️ Groq failed → Gemini fallback");
             outputText = await geminiGenerate(prompt + "\n\nRETURN ONLY RAW JSON. NO MARKDOWN.");
+        }*/
+
+        let outputText = "";
+
+// GEMINI (PRIMARY)
+try {
+    console.log("⚡ Using Gemini (primary)");
+
+    outputText = await geminiGenerate(
+        prompt + "\n\nSTRICT: RETURN ONLY VALID JSON. NO MARKDOWN. NO EXTRA TEXT."
+    );
+
+    if (!outputText || outputText.length < 50) {
+        throw new Error("Gemini returned empty/invalid response");
+    }
+
+} catch (geminiErr) {
+    console.warn("⚠️ Gemini failed → switching to Groq");
+
+    // GROQ (FALLBACK)
+    try {
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.4,
+            max_tokens: 3000,
+            response_format: { type: "json_object" }
+        });
+
+        outputText = chat.choices?.[0]?.message?.content || "";
+
+        if (!outputText) {
+            throw new Error("Groq returned empty response");
         }
+
+    } catch (groqErr) {
+        console.error("❌ Both Gemini and Groq failed");
+
+        return res.status(500).json({
+            error: "AI generation failed. Please try again."
+        });
+    }
+}
 
         console.log("📦 RAW AI OUTPUT GENERATED");
 
