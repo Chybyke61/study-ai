@@ -2202,9 +2202,58 @@ TEXT:
 ${contextText}
 `;
 
+        const groqPrompt = `
+You are a TOP-TIER university examiner setting high-stakes professional exam questions.
+
+Generate EXACTLY ${numQuestions} multiple-choice questions based ONLY on the provided text.
+
+🎯 DIFFICULTY: ${difficulty ? difficulty.toUpperCase() : "HARD"}
+${difficulty === "easy" 
+? "- Focus on foundational concepts, but make the distractors very plausible to test true understanding." 
+: difficulty === "moderate" || difficulty === "medium"
+? "- Focus on conceptual understanding and application. Questions should be tough and require critical thinking." 
+: "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
+
+STRICT RULES:
+- Each question MUST test a DIFFERENT concept
+- NO repetition
+- NO "What is..." questions
+- Focus on reasoning and application
+
+QUALITY:
+- Distractors must be VERY convincing
+- Include common misconceptions
+- Avoid obvious answers
+
+OUTPUT STRICT JSON:
+{
+  "questions": [
+    {
+      "question": "Question text",
+      "options": [
+        "A. Option",
+        "B. Option",
+        "C. Option",
+        "D. Option"
+      ],
+      "answer": "A",
+      "explanation": "Clear reasoning"
+    }
+  ]
+}
+
+CRITICAL:
+- ONLY JSON
+- NO markdown
+- NO extra text
+
+TEXT:
+${contextText}
+`;
+
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
-      /*  let outputText = "";
+      let outputText = "";
 
 // GEMINI (PRIMARY)
 try {
@@ -2224,7 +2273,7 @@ try {
     // GROQ (FALLBACK)
     try {
         const chat = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
+            messages: [{ role: "user", content: groqPrompt }],
             model: "llama-3.1-8b-instant",
             temperature: 0.4,
             max_tokens: 3000,
@@ -2244,9 +2293,9 @@ try {
             error: "AI generation failed. Please try again."
         });
     }
-}*/
+}
 
-        let outputText = "";
+    /*    let outputText = "";
 
 // GEMINI
 try {
@@ -2312,7 +2361,7 @@ try {
             });
         }
     }
-}
+}*/
 
         console.log("📦 RAW AI OUTPUT GENERATED");
 
