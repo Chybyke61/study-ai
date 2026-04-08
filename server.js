@@ -2266,8 +2266,6 @@ try {
     }
 }
 
-       let outputText = "";
-
         console.log("📦 RAW AI OUTPUT GENERATED");
 
         let questionsJson = [];
