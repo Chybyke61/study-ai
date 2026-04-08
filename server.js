@@ -143,38 +143,6 @@ return result.text;
     }
 }
 
-/*async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free") {
-    try {
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                "Content-Type": "application/json"
-                "HTTP-Referer": "https://studyai-app.vercel.app",
-                "X-Title": "StudyAI"
-            },
-            body: JSON.stringify({
-                model,
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.4,
-                max_tokens: 3000
-            })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-            console.error("OpenRouter error:", data);
-            throw new Error("OpenRouter failed");
-        }
-
-        return data.choices?.[0]?.message?.content || "";
-
-    } catch (err) {
-        console.error("OpenRouter error:", err);
-        return "";
-    }
-}*/
 
 async function safeGenerate(prompt) {
     try {
