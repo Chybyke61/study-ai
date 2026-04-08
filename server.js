@@ -150,6 +150,8 @@ async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free")
             headers: {
                 "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
                 "Content-Type": "application/json"
+                "HTTP-Referer": "https://studyai-app.vercel.app",
+                "X-Title": "StudyAI"
             },
             body: JSON.stringify({
                 model,
@@ -160,6 +162,11 @@ async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free")
         });
 
         const data = await res.json();
+
+        if (!res.ok) {
+            console.error("OpenRouter error:", data);
+            throw new Error("OpenRouter failed");
+        }
 
         return data.choices?.[0]?.message?.content || "";
 
@@ -2265,7 +2272,16 @@ try {
         );
 
         if (!outputText || outputText.length < 50) {
-            throw new Error("DeepSeek failed");
+    console.warn("⚠️ DeepSeek failed → trying Mistral");
+
+    outputText = await openRouterGenerate(
+        prompt + "\n\nSTRICT: RETURN ONLY VALID JSON.",
+        "mistralai/mistral-7b-instruct:free"
+    );
+
+    if (!outputText || outputText.length < 50) {
+        throw new Error("Mistral also failed");
+    }
         }
 
     } catch (e2) {
