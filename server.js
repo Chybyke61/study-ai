@@ -2061,7 +2061,11 @@ app.post("/generate-cbt", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
         // Default to 50 questions if the frontend doesn't specify
-        const { filename, numQuestions = 50, difficulty } = req.body;
+     //   const { filename, numQuestions = 50, difficulty } = req.body;
+        let { filename, numQuestions = 20, difficulty } = req.body;
+
+         // Enforce max limit
+         numQuestions = Math.min(parseInt(numQuestions) || 20, 20);
 
         if (!userId || !filename) {
             return res.status(400).json({ error: "Missing data" });
@@ -2087,7 +2091,7 @@ app.post("/generate-cbt", async (req, res) => {
 
         // Remove duplicate chunks quickly and limit string size to prevent memory/token overflows
         const uniqueChunks = [...new Set(chunks)];
-        const contextText = uniqueChunks.join("\n\n").slice(0, 25000); 
+        const contextText = uniqueChunks.join("\n\n").slice(0, 15000); 
 
         // 3. PROMPT (STRICT JSON OUTPUT, TOUGH QUESTIONS, NO REPEATS)
         const prompt = `
@@ -2141,7 +2145,7 @@ ${contextText}
                 messages: [{ role: "user", content: prompt }],
                 model: "llama-3.1-8b-instant",
                 temperature: 0.4, // Slightly higher to enforce variety
-                max_tokens: 6000, // Increased max_tokens to ensure 50 questions don't get truncated
+                max_tokens: 4000, // Increased max_tokens to ensure 20 questions don't get truncated
                 response_format: { type: "json_object" }
             });
 
@@ -2164,6 +2168,17 @@ ${contextText}
             const parsed = JSON.parse(cleaned);
 
             questionsJson = parsed.questions || [];
+
+            questionsJson = questionsJson.map(q => {
+            let answerIndex = ["A", "B", "C", "D"].indexOf(
+            q.answer?.toUpperCase().trim()
+             );
+
+         return {
+           ...q,
+        answer: answerIndex === -1 ? 0 : answerIndex // fallback safety
+         };
+         });
 
             if (!Array.isArray(questionsJson) || questionsJson.length === 0) {
                 throw new Error("Invalid questions array");
