@@ -2220,6 +2220,11 @@ STRICT RULES:
 - NO "What is..." questions
 - Focus on reasoning and application
 
+CONSTRAINTS:
+1. NO DEFINITION QUESTIONS: Never start a question with "What is..."
+2. SCENARIO-FIRST: Begin questions with a context (e.g., "A developer is...", "During a lab procedure...", "Given the following code...").
+3. VARIETY: Use "Predict the output", "Identify the error", or "Choose the best fix".
+
 QUALITY:
 - Distractors must be VERY convincing
 - Include common misconceptions
