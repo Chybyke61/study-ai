@@ -41,6 +41,7 @@ const r2 = new S3Client({
 });
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const app = express();
 
 //app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"], allowedHeaders: ["Content-Type", "x-user-id"] }));
@@ -139,6 +140,32 @@ return result.text;
     } catch (err) {
         console.error("Gemini failed:", err);
         throw err;
+    }
+}
+
+async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free") {
+    try {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model,
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.4,
+                max_tokens: 3000
+            })
+        });
+
+        const data = await res.json();
+
+        return data.choices?.[0]?.message?.content || "";
+
+    } catch (err) {
+        console.error("OpenRouter error:", err);
+        return "";
     }
 }
 
@@ -2170,26 +2197,7 @@ ${contextText}
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
-        // 4. GENERATE
-     /*   let outputText = "";
-
-      try {
-            const chat = await groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "llama-3.1-8b-instant",
-                temperature: 0.4, // Slightly higher to enforce variety
-                max_tokens: 4000, // Increased max_tokens to ensure 20 questions don't get truncated
-                response_format: { type: "json_object" }
-            });
-
-            outputText = chat.choices?.[0]?.message?.content || "";
-
-        } catch (err) {
-            console.warn("⚠️ Groq failed → Gemini fallback");
-            outputText = await geminiGenerate(prompt + "\n\nRETURN ONLY RAW JSON. NO MARKDOWN.");
-        }*/
-
-        let outputText = "";
+      /*  let outputText = "";
 
 // GEMINI (PRIMARY)
 try {
@@ -2228,6 +2236,65 @@ try {
         return res.status(500).json({
             error: "AI generation failed. Please try again."
         });
+    }
+}*/
+
+        let outputText = "";
+
+// GEMINI
+try {
+    console.log("⚡ Gemini (primary)");
+
+    outputText = await geminiGenerate(
+        prompt + "\n\nSTRICT: RETURN ONLY VALID JSON. NO MARKDOWN."
+    );
+
+    if (!outputText || outputText.length < 50) {
+        throw new Error("Gemini failed");
+    }
+
+} catch (e1) {
+
+    // DEEPSEEK (OPENROUTER)
+    try {
+        console.log("🧠 DeepSeek (fallback)");
+
+        outputText = await openRouterGenerate(
+            prompt + "\n\nSTRICT: RETURN ONLY VALID JSON.",
+            "deepseek/deepseek-chat:free"
+        );
+
+        if (!outputText || outputText.length < 50) {
+            throw new Error("DeepSeek failed");
+        }
+
+    } catch (e2) {
+
+        // GROQ (LAST RESORT)
+        try {
+            console.log("Groq (last fallback)");
+
+            const chat = await groq.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "llama-3.1-8b-instant",
+                temperature: 0.4,
+                max_tokens: 3000,
+                response_format: { type: "json_object" }
+            });
+
+            outputText = chat.choices?.[0]?.message?.content || "";
+
+            if (!outputText) {
+                throw new Error("Groq failed");
+            }
+
+        } catch (e3) {
+            console.error("❌ ALL AI FAILED");
+
+            return res.status(500).json({
+                error: "All AI providers failed"
+            });
+        }
     }
 }
 
