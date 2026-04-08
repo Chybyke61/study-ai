@@ -58,6 +58,7 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 const CACHE_FILE = path.join(__dirname, "rag_cache.json");
 
 // --- IN-MEMORY STATE ---
+const userQuizAttempts = {};
 let documentStore = {};
 let keywordIndices = {};
 let vectorIndices = {};
@@ -2060,7 +2061,39 @@ try {
 app.post("/generate-cbt", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
-        // Default to 50 questions if the frontend doesn't specify
+        if (!userQuizAttempts[userId]) {
+    userQuizAttempts[userId] = {
+        count: 0,
+        lastReset: Date.now()
+    };
+        }
+
+        // Rate limit Block
+  const limit = 3;
+const cooldown = 10 * 60 * 1000; // 10 minutes
+
+const userData = userQuizAttempts[userId];
+
+// Reset after cooldown
+if (Date.now() - userData.lastReset > cooldown) {
+    userData.count = 0;
+    userData.lastReset = Date.now();
+}
+
+// Block if exceeded
+if (userData.count >= limit) {
+    const remainingTime = Math.ceil(
+        (cooldown - (Date.now() - userData.lastReset)) / 60000
+    );
+
+    return res.status(429).json({
+        error: `Limit reached. Try again in ${remainingTime} minute(s).`
+    });
+}
+
+// Increment usage
+userData.count++;
+        
      //   const { filename, numQuestions = 50, difficulty } = req.body;
         let { filename, numQuestions = 20, difficulty } = req.body;
 
