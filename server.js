@@ -1930,7 +1930,7 @@ if (allChunks.length === 0) {
     }
 });
 
-app.post("/generate-cbt", async (req, res) => {
+/*app.post("/generate-cbt", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
         const { filename, numQuestions, difficulty } = req.body;
@@ -2055,7 +2055,137 @@ try {
         console.error("CBT Route Error:", err);
         res.status(500).json({ error: "CBT generation failed" });
     }
+});*/
+
+app.post("/generate-cbt", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        // Default to 50 questions if the frontend doesn't specify
+        const { filename, numQuestions = 50, difficulty } = req.body;
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing data" });
+        }
+
+        // 1. GET CHUNKS FROM SUPABASE
+        const { data, error } = await supabase
+            .from("book_chunks")
+            .select("content")
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        if (error || !data || !data.length) {
+            return res.status(404).json({ error: "No content found" });
+        }
+
+        // 2. PICK RANDOM CHUNKS FOR HIGH VARIETY
+        // Grab up to 40 chunks to ensure the AI has enough diverse material for 50 questions
+        const chunks = data
+            .sort(() => 0.5 - Math.random())
+            .slice(0, Math.min(40, data.length))
+            .map(c => c.content.trim());
+
+        // Remove duplicate chunks quickly and limit string size to prevent memory/token overflows
+        const uniqueChunks = [...new Set(chunks)];
+        const contextText = uniqueChunks.join("\n\n").slice(0, 25000); 
+
+        // 3. PROMPT (STRICT JSON OUTPUT, TOUGH QUESTIONS, NO REPEATS)
+        const prompt = `
+Act as an elite university examiner. Generate exactly ${numQuestions} multiple-choice questions based ONLY on the provided text.
+
+DIFFICULTY LEVEL: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
+${difficulty === "easy" 
+? "- Focus on foundational concepts, but make the distractors very plausible to test true understanding." 
+: difficulty === "moderate" || difficulty === "medium"
+? "- Focus on conceptual understanding and application. Questions should be tough and require critical thinking." 
+: "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
+
+STRICT RULES:
+1. GENERATE EXACTLY ${numQuestions} QUESTIONS.
+2. DO NOT REPEAT QUESTIONS OR CONCEPTS. Ensure maximum variety across all ${numQuestions} questions.
+3. No "What is" or simple True/False questions. 
+4. Each question MUST test a different concept from the text.
+5. Use ONLY the provided text.
+6. Each option MUST start with A., B., C., D.
+7. The answer MUST be ONLY the letter (A, B, C, or D).
+8. Return ONLY valid JSON (no markdown, no extra text).
+
+FORMAT:
+{
+  "questions": [
+    {
+      "question": "Question text",
+      "options": [
+        "A. Option",
+        "B. Option",
+        "C. Option",
+        "D. Option"
+      ],
+      "answer": "A",
+      "explanation": "Brief explanation based on the text"
+    }
+  ]
+}
+
+TEXT:
+${contextText}
+`;
+
+        console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
+
+        // 4. GENERATE
+        let outputText = "";
+
+        try {
+            const chat = await groq.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "llama-3.1-8b-instant",
+                temperature: 0.4, // Slightly higher to enforce variety
+                max_tokens: 6000, // Increased max_tokens to ensure 50 questions don't get truncated
+                response_format: { type: "json_object" }
+            });
+
+            outputText = chat.choices?.[0]?.message?.content || "";
+
+        } catch (err) {
+            console.warn("⚠️ Groq failed → Gemini fallback");
+            outputText = await geminiGenerate(prompt + "\n\nRETURN ONLY RAW JSON. NO MARKDOWN.");
+        }
+
+        console.log("📦 RAW AI OUTPUT GENERATED");
+
+        let questionsJson = [];
+
+        try {
+            const cleaned = outputText
+                .replace(/```json|```/g, "")
+                .trim();
+
+            const parsed = JSON.parse(cleaned);
+
+            questionsJson = parsed.questions || [];
+
+            if (!Array.isArray(questionsJson) || questionsJson.length === 0) {
+                throw new Error("Invalid questions array");
+            }
+
+        } catch (e) {
+            console.error("❌ JSON Parse failed:", e);
+            return res.status(500).json({ error: "AI returned bad format" });
+        }
+
+        // 6. ENSURE EXACT NUMBER (simple + safe)
+        questionsJson = questionsJson.slice(0, numQuestions);
+
+        // 7. FINAL RESPONSE
+        res.json({ questions: questionsJson });
+
+    } catch (err) {
+        console.error("CBT Route Error:", err);
+        res.status(500).json({ error: "CBT generation failed" });
+    }
 });
+
 
 app.get("/books", async (req, res) => {
     try {
