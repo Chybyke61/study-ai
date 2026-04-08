@@ -41,7 +41,7 @@ const r2 = new S3Client({
 });
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+//const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const app = express();
 
 //app.use(cors({ origin: "*", methods: ["GET", "POST", "DELETE"], allowedHeaders: ["Content-Type", "x-user-id"] }));
@@ -143,7 +143,7 @@ return result.text;
     }
 }
 
-async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free") {
+/*async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free") {
     try {
         const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -174,7 +174,7 @@ async function openRouterGenerate(prompt, model = "deepseek/deepseek-chat:free")
         console.error("OpenRouter error:", err);
         return "";
     }
-}
+}*/
 
 async function safeGenerate(prompt) {
     try {
