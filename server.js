@@ -2215,20 +2215,20 @@ ${difficulty === "easy"
 : "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
 
 STRICT RULES:
-- Each question MUST test a DIFFERENT concept
-- NO repetition
-- NO "What is..." questions
-- Focus on reasoning and application
+1. Each question MUST test a DIFFERENT concept
+2. NO repetition
+3. NO "What is..." questions
+4. Focus on reasoning and application
 
 CONSTRAINTS:
 1. NO DEFINITION QUESTIONS: Never start a question with "What is..."
-2. SCENARIO-FIRST: Begin questions with a context (e.g., "A developer is...", "During a lab procedure...", "Given the following code...").
+2. SCENARIO-FIRST: Begin questions with a context. 
 3. VARIETY: Use "Predict the output", "Identify the error", or "Choose the best fix".
 
 QUALITY:
-- Distractors must be VERY convincing
-- Include common misconceptions
-- Avoid obvious answers
+1. Distractors must be VERY convincing
+2. Include common misconceptions
+3. Avoid obvious answers
 
 OUTPUT STRICT JSON:
 {
