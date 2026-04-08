@@ -2170,7 +2170,7 @@ TEXT:
 ${contextText}
 `;
 
-        const groqPrompt = `
+     /*   const groqPrompt = `
 You are a TOP-TIER university examiner setting high-stakes professional exam questions.
 
 Generate EXACTLY ${numQuestions} multiple-choice questions based ONLY on the provided text.
@@ -2220,8 +2220,7 @@ CRITICAL:
 - NO extra text
 
 TEXT:
-${contextText}
-`;
+${contextText}*/
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
@@ -2245,7 +2244,7 @@ try {
     // GROQ (FALLBACK)
     try {
         const chat = await groq.chat.completions.create({
-            messages: [{ role: "user", content: groqPrompt }],
+            messages: [{ role: "user", content: prompt }],
             model: "llama-3.1-8b-instant",
             temperature: 0.4,
             max_tokens: 3000,
@@ -2267,73 +2266,7 @@ try {
     }
 }
 
-    /*    let outputText = "";
-
-// GEMINI
-try {
-    console.log("⚡ Gemini (primary)");
-
-    outputText = await geminiGenerate(
-        prompt + "\n\nSTRICT: RETURN ONLY VALID JSON. NO MARKDOWN."
-    );
-
-    if (!outputText || outputText.length < 50) {
-        throw new Error("Gemini failed");
-    }
-
-} catch (e1) {
-
-    // DEEPSEEK (OPENROUTER)
-    try {
-        console.log("🧠 DeepSeek (fallback)");
-
-        outputText = await openRouterGenerate(
-            prompt + "\n\nSTRICT: RETURN ONLY VALID JSON.",
-            "deepseek/deepseek-chat:free"
-        );
-
-        if (!outputText || outputText.length < 50) {
-    console.warn("⚠️ DeepSeek failed → trying Mistral");
-
-    outputText = await openRouterGenerate(
-        prompt + "\n\nSTRICT: RETURN ONLY VALID JSON.",
-        "mistralai/mistral-7b-instruct:free"
-    );
-
-    if (!outputText || outputText.length < 50) {
-        throw new Error("Mistral also failed");
-    }
-        }
-
-    } catch (e2) {
-
-        // GROQ (LAST RESORT)
-        try {
-            console.log("Groq (last fallback)");
-
-            const chat = await groq.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
-                model: "llama-3.1-8b-instant",
-                temperature: 0.4,
-                max_tokens: 3000,
-                response_format: { type: "json_object" }
-            });
-
-            outputText = chat.choices?.[0]?.message?.content || "";
-
-            if (!outputText) {
-                throw new Error("Groq failed");
-            }
-
-        } catch (e3) {
-            console.error("❌ ALL AI FAILED");
-
-            return res.status(500).json({
-                error: "All AI providers failed"
-            });
-        }
-    }
-}*/
+       let outputText = "";
 
         console.log("📦 RAW AI OUTPUT GENERATED");
 
