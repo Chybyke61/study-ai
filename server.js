@@ -2149,7 +2149,7 @@ userData.count++;
 
         // Remove duplicate chunks quickly and limit string size to prevent memory/token overflows
         const uniqueChunks = [...new Set(chunks)];
-        const contextText = uniqueChunks.join("\n\n").slice(0, 10000); 
+        const contextText = uniqueChunks.join("\n\n").slice(0, 6000); 
 
         // 3. PROMPT (STRICT JSON OUTPUT, TOUGH QUESTIONS, NO REPEATS)
         const prompt = `
@@ -2247,7 +2247,7 @@ ${contextText}*/
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
-      let outputText = "";
+      /*let outputText = "";
 
 // GEMINI (PRIMARY)
 try {
@@ -2285,6 +2285,42 @@ try {
 
         return res.status(500).json({
             error: "AI generation failed. Please try again."
+        });
+    }
+}*/
+
+        let outputText = "";
+
+try {
+    console.log("⚡ Using Gemini (primary)");
+
+    outputText = await Promise.race([
+        geminiGenerate(prompt),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Gemini timeout")), 12000)
+        )
+    ]);
+
+} catch (geminiErr) {
+
+    console.warn("⚠️ Gemini failed → switching to Groq");
+
+    try {
+        const chat = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: "llama-3.1-8b-instant",
+            temperature: 0.4,
+            max_tokens: 3000,
+            response_format: { type: "json_object" }
+        });
+
+        outputText = chat.choices?.[0]?.message?.content || "";
+
+    } catch (groqErr) {
+        console.error("❌ Both Gemini and Groq failed");
+
+        return res.status(500).json({
+            error: "AI generation failed"
         });
     }
 }
