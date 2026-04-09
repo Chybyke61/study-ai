@@ -2069,32 +2069,32 @@ ${contextText}
 `;
 
 const groqPrompt = `
-Act as a JAMB examiner. Generate ${numQuestions} MCQs based ONLY on the provided text.
+Act as an elite university examiner. Your mission is to create a high-variety exam that covers the ENTIRETY of the provided text.
 
-DIFFICULTY: ${difficulty.toUpperCase()}
+DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
 
-STRICT QUESTION ARCHITECTURE:
-1. NO BINARY QUESTIONS: Every question must have 4 distinct, substantive options. 
-2. FORBIDDEN FORMATS: Absolutely no "True or False", "Yes or No", or "Which of these is correct".
-3. MANDATORY STARTERS: Every question MUST begin with one of these specific anchors:
-   - "In the context of [Concept], how does..."
-   - "According to the passage, why is [Concept] described as..."
-   - "Given the scenario where [X] happens, what is the impact on..."
-   - "Identify the relationship between [A] and [B] regarding..."
-   - "Contrast the mechanism of [A] with [B] in terms of..."
-4. DISTRACTORS: All 3 wrong options must be technical terms from the text, but applied contextually incorrectly.
+STRICT VARIETY RULES:
+1. CONCEPT MAPPING: You MUST identify ${numQuestions} distinct, non-overlapping concepts from the text.
+2. ZERO REPETITION: Every question must test a completely different idea, process, or fact. Do not dwell on one section of the text.
+3. FORBIDDEN: No "What is", "True or False", or simple "Yes/No" structures.
+4. STARTER DIVERSITY: Randomly rotate between these question styles:
+   - "Analyze the relationship between..."
+   - "In a scenario where [X] occurs, determine..."
+   - "Contrast the mechanism of [A] with [B]..."
+   - "Evaluate the significance of [Concept] in regards to..."
 
 RULES:
-- QUANTITY: Exactly ${numQuestions}.
-- VARIETY: Each question must target a unique paragraph—zero concept overlap.
-- NO "ALL OF THE ABOVE": Every option must be a unique, stand-alone answer.
-- OUTPUT: Return ONLY raw JSON. No markdown.
+- Exactly ${numQuestions} questions.
+- Use ONLY the provided text.
+- Options must be A, B, C, D. Answer must be ONLY the letter.
+- Return ONLY raw JSON. No markdown.
 
 FORMAT:
 {"questions":[{"question":"","options":["A. ","B. ","C. ","D. "],"answer":"","explanation":""}]}
 
 TEXT:
-${contextText}`;
+${contextText}
+`;
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
