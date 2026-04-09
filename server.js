@@ -129,7 +129,7 @@ function isLikelyScanned(text) {
     );
 }
 
-async function geminiGenerate(prompt) {
+/*async function geminiGenerate(prompt) {
     try {
         const result = await genAI.models.generateContent({
   model: "gemini-3.1-flash-lite-preview", // Lighter model for better availability
@@ -141,13 +141,13 @@ return result.text;
         console.error("Gemini failed:", err);
         throw err;
     }
-} 
+} */
 
-/*async function geminiGenerate(prompt, retries = 3) {
+async function geminiGenerate(prompt, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const result = await genAI.models.generateContent({
-                model: "gemini-1.5-flash", // 🔥 use lighter model
+                model: "gemini-3.1-flash-lite-preview", // Lighter model for better availability
                 contents: [{
                     role: "user",
                     parts: [{ text: prompt }]
@@ -164,7 +164,7 @@ return result.text;
             await new Promise(r => setTimeout(r, 2000)); // wait 2s
         }
     }
-}*/
+}
 
 
 async function safeGenerate(prompt) {
@@ -2069,40 +2069,32 @@ ${contextText}
 `;
 
 const groqPrompt = `
-You are an expert examiner designing ${numQuestions} CBT-style multiple-choice questions in the style of JAMB exams. 
-Your task is to generate questions based ONLY on the provided text.
+Act as a JAMB examiner. Generate ${numQuestions} MCQs based ONLY on the provided text.
 
-DIFFICULTY LEVEL: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
+DIFFICULTY: ${difficulty.toUpperCase()}
 
-STRICT RULES:
-1. QUANTITY: Generate EXACTLY ${numQuestions} questions.
-2. SOURCE: Use ONLY the provided text. Do not invent information.
-3. UNIQUENESS: No two questions may test the same concept or use the same sentence structure.
-4. FORMAT: Each question MUST be a four-option multiple-choice question (A–D). 
-   - DO NOT generate True/False questions.
-   - DO NOT repeat the same style of questioning.
-   - DO NOT start with "What is", "What are", or "Which of the following".
-5. STYLE: Questions must resemble JAMB CBT exam questions — concise, exam-like, and varied in approach (scenario, cause-effect, comparative, inferential, analysis).
-6. DISTRACTORS: Provide 3 wrong options that are plausible but incorrect based on the text.
-7. ANSWERS: Clearly mark the correct option with only the letter (A, B, C, or D).
-8. OUTPUT: Return ONLY a raw JSON object. No markdown, no extra text.
+STRICT QUESTION ARCHITECTURE:
+1. NO BINARY QUESTIONS: Every question must have 4 distinct, substantive options. 
+2. FORBIDDEN FORMATS: Absolutely no "True or False", "Yes or No", or "Which of these is correct".
+3. MANDATORY STARTERS: Every question MUST begin with one of these specific anchors:
+   - "In the context of [Concept], how does..."
+   - "According to the passage, why is [Concept] described as..."
+   - "Given the scenario where [X] happens, what is the impact on..."
+   - "Identify the relationship between [A] and [B] regarding..."
+   - "Contrast the mechanism of [A] with [B] in terms of..."
+4. DISTRACTORS: All 3 wrong options must be technical terms from the text, but applied contextually incorrectly.
+
+RULES:
+- QUANTITY: Exactly ${numQuestions}.
+- VARIETY: Each question must target a unique paragraph—zero concept overlap.
+- NO "ALL OF THE ABOVE": Every option must be a unique, stand-alone answer.
+- OUTPUT: Return ONLY raw JSON. No markdown.
 
 FORMAT:
-{
-  "questions": [
-    {
-      "question": "Insert JAMB-style CBT question here",
-      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-      "answer": "C",
-      "explanation": "Brief reasoning based on the provided text."
-    }
-  ]
-}
+{"questions":[{"question":"","options":["A. ","B. ","C. ","D. "],"answer":"","explanation":""}]}
 
 TEXT:
-${contextText}
-`;
-
+${contextText}`;
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
