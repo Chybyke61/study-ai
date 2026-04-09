@@ -2069,9 +2069,15 @@ ${contextText}
 `;
 
 const groqPrompt = `
-Act as a university examiner. Generate ${numQuestions} MCQs using ONLY this text.
+You are a Senior Academic Examiner specializing in psychometric assessment design. Your goal is to Generate ${numQuestions} university-level quiz that tests deep conceptual mastery.
 
-DIFFICULTY: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
+DIFFICULTY LEVEL: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
+${difficulty === "easy" 
+? "- Focus on foundational concepts, but make the distractors very plausible to test true understanding." 
+: difficulty === "moderate" || difficulty === "medium"
+? "- Focus on conceptual understanding and application. Questions should be tough and require critical thinking." 
+: "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
+
 STYLE: No "What is/are" questions. Use scenarios, cause-effect, or logical deduction. 
 
 RULES:
