@@ -2068,29 +2068,45 @@ TEXT:
 ${contextText}
 `;
 
+
 const groqPrompt = `
-You are a Senior Academic Examiner specializing in psychometric assessment design. Your goal is to Generate ${numQuestions} university-level quiz that tests deep conceptual mastery.
+Act as an elite university professor specializing in cognitive assessment. Your task is to generate exactly ${numQuestions} highly sophisticated multiple-choice questions based ONLY on the provided text.
 
 DIFFICULTY LEVEL: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
-${difficulty === "easy" 
-? "- Focus on foundational concepts, but make the distractors very plausible to test true understanding." 
-: difficulty === "moderate" || difficulty === "medium"
-? "- Focus on conceptual understanding and application. Questions should be tough and require critical thinking." 
-: "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
 
-STYLE: No "What is/are" questions. Use scenarios, cause-effect, or logical deduction. 
+STRICT QUESTION ARCHITECTURE:
+- DO NOT start any question with "What is", "What are", or "Which of the following".
+- DO NOT use simple recall questions.
+- MANDATORY VARIETY: For every question, use a different cognitive prompt style from this list:
+    1. SCENARIO: Create a hypothetical situation applying a concept from the text.
+    2. CAUSE-EFFECT: "How does [Concept A] directly influence [Concept B] in the context of..."
+    3. COMPARATIVE: "Contrast [Term A] with [Term B] regarding..."
+    4. INFERENTIAL: "Based on the text's description of [X], one can deduce that..."
+    5. CRITICAL ANALYSIS: "Which statement best critiques the relationship between..."
 
 RULES:
-1. Exactly ${numQuestions} questions. 
-2. Test different concepts; zero repetition.
-3. 4 options (A-D). Answer must be ONLY the letter. Plausible distractors.
-4. Return ONLY raw JSON. No markdown.
+1. QUANTITY: Generate EXACTLY ${numQuestions} questions.
+2. SOURCE: Use ONLY the provided text. If information isn't there, do not invent it.
+3. UNIQUENESS: No two questions may test the same concept or use the same sentence structure.
+4. DISTRACTORS: All 3 wrong options must be "highly plausible" but factually incorrect based on the text.
+5. FORMATTING: Each option MUST start with A., B., C., D. The answer field must be ONLY the letter.
+6. OUTPUT: Return ONLY a raw JSON object. No markdown code blocks, no intro, no outro.
 
 FORMAT:
-{"questions":[{"question":"","options":["A. ","B. ","C. ","D. "],"answer":"","explanation":""}]}
+{
+  "questions": [
+    {
+      "question": "[Insert Scenario or Analysis Question Here]",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "answer": "A",
+      "explanation": "Detailed reasoning based on the provided text."
+    }
+  ]
+}
 
 TEXT:
 ${contextText}`;
+
 
      /*   const groqPrompt = `
 You are a TOP-TIER university examiner setting high-stakes professional exam questions.
