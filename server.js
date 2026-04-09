@@ -132,7 +132,7 @@ function isLikelyScanned(text) {
 async function geminiGenerate(prompt) {
     try {
         const result = await genAI.models.generateContent({
-  model: "gemini-2.5-flash",
+  model: "gemini-3.0-flash",
   contents: prompt
 });
 
@@ -2068,45 +2068,37 @@ TEXT:
 ${contextText}
 `;
 
-
 const groqPrompt = `
-Act as an elite university professor specializing in cognitive assessment. Your task is to generate exactly ${numQuestions} highly sophisticated multiple-choice questions based ONLY on the provided text.
+You are an expert examiner designing ${numQuestions} CBT-style multiple-choice questions in the style of JAMB exams. 
+Your task is to generate questions based ONLY on the provided text.
 
 DIFFICULTY LEVEL: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
 
-STRICT QUESTION ARCHITECTURE:
-- DO NOT start any question with "What is", "What are", or "Which of the following".
-- DO NOT use simple recall questions.
-- MANDATORY VARIETY: For every question, use a different cognitive prompt style from this list:
-    1. SCENARIO: Create a hypothetical situation applying a concept from the text.
-    2. CAUSE-EFFECT: "How does [Concept A] directly influence [Concept B] in the context of..."
-    3. COMPARATIVE: "Contrast [Term A] with [Term B] regarding..."
-    4. INFERENTIAL: "Based on the text's description of [X], one can deduce that..."
-    5. CRITICAL ANALYSIS: "Which statement best critiques the relationship between..."
-
-RULES:
+STRICT RULES:
 1. QUANTITY: Generate EXACTLY ${numQuestions} questions.
-2. SOURCE: Use ONLY the provided text. If information isn't there, do not invent it.
+2. SOURCE: Use ONLY the provided text. Do not invent information.
 3. UNIQUENESS: No two questions may test the same concept or use the same sentence structure.
-4. DISTRACTORS: All 3 wrong options must be "highly plausible" but factually incorrect based on the text.
-5. FORMATTING: Each option MUST start with A., B., C., D. The answer field must be ONLY the letter.
-6. OUTPUT: Return ONLY a raw JSON object. No markdown code blocks, no intro, no outro.
+4. STYLE: Questions must resemble JAMB exam CBT questions — concise, exam-like, and varied in approach.
+5. VARIETY: Do not repeat question formats. Avoid starting with "What is", "What are", or "Which of the following".
+6. DISTRACTORS: Provide 3 wrong options that are plausible but incorrect based on the text.
+7. ANSWERS: Clearly mark the correct option with only the letter (A, B, C, or D).
+8. OUTPUT: Return ONLY a raw JSON object. No markdown, no extra text.
 
 FORMAT:
 {
   "questions": [
     {
-      "question": "[Insert Scenario or Analysis Question Here]",
+      "question": "Insert JAMB-style CBT question here",
       "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-      "answer": "A",
-      "explanation": "Detailed reasoning based on the provided text."
+      "answer": "B",
+      "explanation": "Brief reasoning based on the provided text."
     }
   ]
 }
 
 TEXT:
-${contextText}`;
-
+${contextText}
+`;
 
      /*   const groqPrompt = `
 You are a TOP-TIER university examiner setting high-stakes professional exam questions.
