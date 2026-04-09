@@ -147,7 +147,7 @@ async function geminiGenerate(prompt, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const result = await genAI.models.generateContent({
-                model: "gemini-1.5-flash"
+                model: "gemini-1.5-flash", 
                 contents: [{
                     role: "user",
                     parts: [{ text: prompt }]
