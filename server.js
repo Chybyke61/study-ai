@@ -129,7 +129,7 @@ function isLikelyScanned(text) {
     );
 }
 
-async function geminiGenerate(prompt) {
+/*async function geminiGenerate(prompt) {
     try {
         const result = await genAI.models.generateContent({
   model: "gemini-2.5-flash",
@@ -140,6 +140,29 @@ return result.text;
     } catch (err) {
         console.error("Gemini failed:", err);
         throw err;
+    }
+} */
+
+async function geminiGenerate(prompt, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const result = await genAI.models.generateContent({
+                model: "gemini-1.5-flash", // 🔥 use lighter model
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }]
+                }]
+            });
+
+            return result.text;
+
+        } catch (err) {
+            console.warn(`Gemini attempt ${i + 1} failed`);
+
+            if (i === retries - 1) throw err;
+
+            await new Promise(r => setTimeout(r, 2000)); // wait 2s
+        }
     }
 }
 
@@ -2126,7 +2149,7 @@ userData.count++;
 
         // Remove duplicate chunks quickly and limit string size to prevent memory/token overflows
         const uniqueChunks = [...new Set(chunks)];
-        const contextText = uniqueChunks.join("\n\n").slice(0, 15000); 
+        const contextText = uniqueChunks.join("\n\n").slice(0, 10000); 
 
         // 3. PROMPT (STRICT JSON OUTPUT, TOUGH QUESTIONS, NO REPEATS)
         const prompt = `
