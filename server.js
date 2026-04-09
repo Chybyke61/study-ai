@@ -147,7 +147,7 @@ async function geminiGenerate(prompt, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const result = await genAI.models.generateContent({
-                model: "gemini-3.1-flash-lite-preview", // Lighter model for better availability
+                model: "gemini-1.5-flash"
                 contents: [{
                     role: "user",
                     parts: [{ text: prompt }]
@@ -1958,7 +1958,7 @@ if (allChunks.length === 0) {
 
 
 
-app.post("/generate-cbt", async (req, res) => {
+/* app.post("/generate-cbt", async (req, res) => {
     try {
         const userId = req.headers["x-user-id"];
         if (!userQuizAttempts[userId]) {
@@ -2138,7 +2138,7 @@ try {
             error: "AI generation failed. Please try again."
         });
     }
-}*/
+}
 
         let outputText = "";
 
@@ -2219,8 +2219,161 @@ try {
         console.error("CBT Route Error:", err);
         res.status(500).json({ error: "CBT generation failed" });
     }
-});
+}); */
+app.post("/generate-cbt", async (req, res) => {
+    try {
+        const userId = req.headers["x-user-id"];
+        let { filename, numQuestions = 20, difficulty = "medium" } = req.body;
 
+        numQuestions = Math.min(parseInt(numQuestions) || 20, 20);
+
+        if (!userId || !filename) {
+            return res.status(400).json({ error: "Missing data" });
+        }
+
+        // 🔥 1. FETCH CONTENT
+        const { data, error } = await supabase
+            .from("book_chunks")
+            .select("content")
+            .eq("user_id", userId)
+            .eq("filename", filename);
+
+        if (error || !data || !data.length) {
+            return res.status(404).json({ error: "No content found" });
+        }
+
+        // 🔥 2. CREATE DIVERSE CONTEXT (ANTI-REPETITION)
+        const shuffled = data.sort(() => 0.5 - Math.random());
+
+        const selectedChunks = [];
+        const seen = new Set();
+
+        for (let item of shuffled) {
+            const text = item.content.trim().slice(0, 300);
+            const key = text.slice(0, 80);
+
+            if (!seen.has(key)) {
+                seen.add(key);
+                selectedChunks.push(text);
+            }
+
+            if (selectedChunks.length >= 15) break;
+        }
+
+        const contextText = selectedChunks.join("\n\n").slice(0, 5000);
+
+        // 🔥 3. BATCHING (KEY FIX)
+        const batchSize = 5;
+        const batches = Math.ceil(numQuestions / batchSize);
+
+        let allQuestions = [];
+
+        for (let i = 0; i < batches; i++) {
+
+            const prompt = `
+You are an elite university examiner.
+
+Generate EXACTLY ${batchSize} UNIQUE multiple-choice questions.
+
+DIFFICULTY: ${difficulty.toUpperCase()}
+
+RULES:
+1. Each question MUST test a DIFFERENT concept
+2. NO repetition of ideas or wording
+3. Avoid "What is..." questions
+4. Use application, scenarios, reasoning
+5. Options must be plausible
+6. Answer must be A, B, C, or D
+
+OUTPUT JSON ONLY:
+{
+  "questions": [
+    {
+      "question": "...",
+      "options": ["A...", "B...", "C...", "D..."],
+      "answer": "A",
+      "explanation": "..."
+    }
+  ]
+}
+
+TEXT:
+${contextText}
+`;
+
+            let outputText = "";
+
+            // 🔥 GEMINI PRIMARY
+            try {
+                outputText = await Promise.race([
+                    geminiGenerate(prompt),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error("Gemini timeout")), 12000)
+                    )
+                ]);
+
+            } catch (err) {
+                console.warn("⚠️ Gemini failed → Groq fallback");
+
+                const chat = await groq.chat.completions.create({
+                    messages: [{ role: "user", content: prompt }],
+                    model: "llama-3.1-8b-instant",
+                    temperature: 0.7,
+                    response_format: { type: "json_object" }
+                });
+
+                outputText = chat.choices?.[0]?.message?.content || "";
+            }
+
+            // 🔥 PARSE
+            try {
+                const cleaned = outputText.replace(/```json|```/g, "").trim();
+                const parsed = JSON.parse(cleaned);
+
+                if (parsed.questions) {
+                    allQuestions.push(...parsed.questions);
+                }
+
+            } catch (e) {
+                console.warn("⚠️ Batch parse failed, skipping batch");
+            }
+        }
+
+        // 🔥 4. REMOVE DUPLICATES (VERY IMPORTANT)
+        const uniqueQuestions = [];
+        const seenQuestions = new Set();
+
+        for (let q of allQuestions) {
+            const key = q.question.toLowerCase().slice(0, 100);
+
+            if (!seenQuestions.has(key)) {
+                seenQuestions.add(key);
+                uniqueQuestions.push(q);
+            }
+        }
+
+        // 🔥 5. FINAL TRIM
+        const finalQuestions = uniqueQuestions.slice(0, numQuestions);
+
+        // 🔥 FORMAT ANSWER INDEX
+        const formatted = finalQuestions.map(q => {
+            const index = ["A", "B", "C", "D"].indexOf(
+                q.answer?.toUpperCase().trim()
+            );
+
+            return {
+                ...q,
+                answer: index === -1 ? 0 : index
+            };
+        });
+
+        res.json({ questions: formatted });
+
+    } catch (err) {
+        console.error("CBT Error:", err);
+        res.status(500).json({ error: "CBT generation failed" });
+    }
+});
 
 app.get("/books", async (req, res) => {
     try {
