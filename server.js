@@ -132,7 +132,7 @@ function isLikelyScanned(text) {
 async function geminiGenerate(prompt) {
     try {
         const result = await genAI.models.generateContent({
-  model: "gemini-3.0-flash",
+  model: "gemini-3.1-flash-lite-preview", // Lighter model for better availability
   contents: prompt
 });
 
@@ -2078,8 +2078,11 @@ STRICT RULES:
 1. QUANTITY: Generate EXACTLY ${numQuestions} questions.
 2. SOURCE: Use ONLY the provided text. Do not invent information.
 3. UNIQUENESS: No two questions may test the same concept or use the same sentence structure.
-4. STYLE: Questions must resemble JAMB exam CBT questions — concise, exam-like, and varied in approach.
-5. VARIETY: Do not repeat question formats. Avoid starting with "What is", "What are", or "Which of the following".
+4. FORMAT: Each question MUST be a four-option multiple-choice question (A–D). 
+   - DO NOT generate True/False questions.
+   - DO NOT repeat the same style of questioning.
+   - DO NOT start with "What is", "What are", or "Which of the following".
+5. STYLE: Questions must resemble JAMB CBT exam questions — concise, exam-like, and varied in approach (scenario, cause-effect, comparative, inferential, analysis).
 6. DISTRACTORS: Provide 3 wrong options that are plausible but incorrect based on the text.
 7. ANSWERS: Clearly mark the correct option with only the letter (A, B, C, or D).
 8. OUTPUT: Return ONLY a raw JSON object. No markdown, no extra text.
@@ -2090,7 +2093,7 @@ FORMAT:
     {
       "question": "Insert JAMB-style CBT question here",
       "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-      "answer": "B",
+      "answer": "C",
       "explanation": "Brief reasoning based on the provided text."
     }
   ]
@@ -2100,57 +2103,6 @@ TEXT:
 ${contextText}
 `;
 
-     /*   const groqPrompt = `
-You are a TOP-TIER university examiner setting high-stakes professional exam questions.
-
-Generate EXACTLY ${numQuestions} multiple-choice questions based ONLY on the provided text.
-
-🎯 DIFFICULTY: ${difficulty ? difficulty.toUpperCase() : "HARD"}
-${difficulty === "easy" 
-? "- Focus on foundational concepts, but make the distractors very plausible to test true understanding." 
-: difficulty === "moderate" || difficulty === "medium"
-? "- Focus on conceptual understanding and application. Questions should be tough and require critical thinking." 
-: "- HARD MODE: Make the questions EXTREMELY TOUGH. Require multi-step reasoning, complex analysis, and highly subtle distractors. Test deep mastery."}
-
-STRICT RULES:
-1. Each question MUST test a DIFFERENT concept
-2. NO repetition
-3. NO "What is..." questions
-4. Focus on reasoning and application
-
-CONSTRAINTS:
-1. NO DEFINITION QUESTIONS: Never start a question with "What is..."
-
-
-QUALITY:
-1. Distractors must be VERY convincing
-2. Include common misconceptions
-3. Avoid obvious answers
-
-OUTPUT STRICT JSON:
-{
-  "questions": [
-    {
-      "question": "Question text",
-      "options": [
-        "A. Option",
-        "B. Option",
-        "C. Option",
-        "D. Option"
-      ],
-      "answer": "A",
-      "explanation": "Clear reasoning"
-    }
-  ]
-}
-
-CRITICAL:
-- ONLY JSON
-- NO markdown
-- NO extra text
-
-TEXT:
-${contextText}*/
 
         console.log(`🔥 Generating ${numQuestions} ${difficulty} CBT...`);
 
