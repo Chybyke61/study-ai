@@ -129,7 +129,7 @@ function isLikelyScanned(text) {
     );
 }
 
-/*async function geminiGenerate(prompt) {
+async function geminiGenerate(prompt) {
     try {
         const result = await genAI.models.generateContent({
   model: "gemini-2.5-flash",
@@ -141,9 +141,9 @@ return result.text;
         console.error("Gemini failed:", err);
         throw err;
     }
-} */
+} 
 
-async function geminiGenerate(prompt, retries = 3) {
+/*async function geminiGenerate(prompt, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const result = await genAI.models.generateContent({
@@ -164,7 +164,7 @@ async function geminiGenerate(prompt, retries = 3) {
             await new Promise(r => setTimeout(r, 2000)); // wait 2s
         }
     }
-}
+}*/
 
 
 async function safeGenerate(prompt) {
@@ -1956,132 +1956,7 @@ if (allChunks.length === 0) {
     }
 });
 
-/*app.post("/generate-cbt", async (req, res) => {
-    try {
-        const userId = req.headers["x-user-id"];
-        const { filename, numQuestions, difficulty } = req.body;
 
-        if (!userId || !filename) {
-            return res.status(400).json({ error: "Missing data" });
-        }
-
-        // 1. GET CHUNKS FROM SUPABASE
-        const { data, error } = await supabase
-            .from("book_chunks")
-            .select("content")
-            .eq("user_id", userId)
-            .eq("filename", filename);
-
-        if (error || !data.length) {
-            return res.status(404).json({ error: "No content found" });
-        }
-
-        // 2. PICK RANDOM CHUNKS (lightweight + efficient)
-        const chunks = data
-            .sort(() => 0.5 - Math.random())
-            .slice(0, Math.min(15, data.length))
-            .map(c => c.content.slice(0, 700));
-
-        // Remove duplicate chunks quickly
-        const uniqueChunks = [...new Set(chunks)];
-
-        // 3. PROMPT (STRICT JSON OUTPUT)
-        const prompt = `
-Act as an expert examiner. Generate exactly ${numQuestions} multiple-choice questions based ONLY on the provided text.
-
-DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
-${difficulty === "easy" 
-? "- Focus on clear facts and direct understanding." 
-: difficulty === "medium" 
-? "- Focus on understanding, interpretation, and simple application." 
-: "- HARD MODE: Require multi-step reasoning and subtle distractors."}
-
-RULES:
-1. No "What is" or True/False questions.
-2. Each question MUST test a different concept.
-3. Use ONLY the provided text.
-4. Each option MUST start with A., B., C., D.
-5. The answer MUST be ONLY the letter (A, B, C, or D).
-6. Return ONLY valid JSON (no markdown, no extra text).
-
-FORMAT:
-{
-  "questions": [
-    {
-      "question": "Question text",
-      "options": [
-        "A. Option",
-        "B. Option",
-        "C. Option",
-        "D. Option"
-      ],
-      "answer": "A",
-      "explanation": "Brief explanation based on the text"
-    }
-  ]
-}
-
-TEXT:
-${uniqueChunks.join("\n\n")}
-`;
-
-        console.log(`🔥 Generating ${difficulty} CBT...`);
-
-        // 4. GENERATE
-        let outputText = "";
-
-try {
-    const chat = await groq.chat.completions.create({
-        messages: [{ role: "user", content: prompt }],
-        model: "llama-3.1-8b-instant",
-        temperature: 0.3,
-        response_format: { type: "json_object" }
-    });
-
-    outputText = chat.choices?.[0]?.message?.content || "";
-
-} catch (err) {
-    console.error("❌ Groq failed:", err);
-    return res.status(500).json({ error: "AI generation failed" });
-}
-
-        console.log("📦 RAW AI OUTPUT:", outputText);
-
-        let questionsJson = [];
-
-try {
-    const cleaned = outputText
-        .replace(/```json|```/g, "")
-        .trim();
-
-    const parsed = JSON.parse(cleaned);
-
-    questionsJson = parsed.questions || [];
-
-    if (!Array.isArray(questionsJson) || questionsJson.length === 0) {
-        throw new Error("Invalid questions array");
-    }
-
-} catch (e) {
-    console.error("❌ JSON Parse failed:", e);
-    console.log("RAW OUTPUT:", outputText);
-
-    return res.status(500).json({
-        error: "AI returned bad format"
-    });
-}
-
-        // 6. ENSURE EXACT NUMBER (simple + safe)
-        questionsJson = questionsJson.slice(0, numQuestions);
-
-        // 7. FINAL RESPONSE
-        res.json({ questions: questionsJson });
-
-    } catch (err) {
-        console.error("CBT Route Error:", err);
-        res.status(500).json({ error: "CBT generation failed" });
-    }
-});*/
 
 app.post("/generate-cbt", async (req, res) => {
     try {
