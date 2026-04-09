@@ -2068,6 +2068,24 @@ TEXT:
 ${contextText}
 `;
 
+const groqPrompt = `
+Act as a university examiner. Generate ${numQuestions} MCQs using ONLY this text.
+
+DIFFICULTY: ${difficulty ? difficulty.toUpperCase() : 'HARD'}
+STYLE: No "What is/are" questions. Use scenarios, cause-effect, or logical deduction. 
+
+RULES:
+1. Exactly ${numQuestions} questions. 
+2. Test different concepts; zero repetition.
+3. 4 options (A-D). Answer must be ONLY the letter. Plausible distractors.
+4. Return ONLY raw JSON. No markdown.
+
+FORMAT:
+{"questions":[{"question":"","options":["A. ","B. ","C. ","D. "],"answer":"","explanation":""}]}
+
+TEXT:
+${contextText}`;
+
      /*   const groqPrompt = `
 You are a TOP-TIER university examiner setting high-stakes professional exam questions.
 
@@ -2182,7 +2200,7 @@ try {
 
     try {
         const chat = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
+            messages: [{ role: "user", content: groqPrompt }],
             model: "llama-3.1-8b-instant",
             temperature: 0.4,
             max_tokens: 3000,
