@@ -2316,6 +2316,7 @@ STRICT ARCHITECTURE:
    - COMPARISON: Contrast two different terms from the text.
    - INFERENCE: Ask what can be deduced if a certain condition in the text changes.
    - ANALYSIS: Breakdown a complex process into its functional parts.
+5. Shuffle the questions 
 
 RULES:
 - Exactly ${batchSize} questions.
