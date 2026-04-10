@@ -188,7 +188,7 @@ async function geminiOCR(filePath, mimeType = "image/png") {
         const fileBuffer = fs.readFileSync(filePath);
 
         const result = await genAI.models.generateContent({
-  model: "gemini-1.5-flash",
+  model: "gemini-3.1-flash-lite-preview",
   contents: [
     {
       role: "user",
