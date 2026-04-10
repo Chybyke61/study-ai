@@ -182,7 +182,7 @@ async function safeGenerate(prompt) {
     }
 }
 
-async function geminiOCR(filePath, mimeType = "image/png") {
+/*async function geminiOCR(filePath, mimeType = "image/png") {
     try {
         console.log("🔍 Gemini OCR running...");
         const fileBuffer = fs.readFileSync(filePath);
@@ -205,7 +205,44 @@ async function geminiOCR(filePath, mimeType = "image/png") {
       ]
     }
   ]
-});
+});*/
+
+async function geminiOCR(filePath, mimeType = "image/png") {
+    try {
+        console.log("🔍 Gemini OCR running...");
+        
+        // 1. Initialize the stable model (Gemini 1.5 Flash is highly optimized for OCR)
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+        const fileBuffer = fs.readFileSync(filePath);
+
+        // 2. Format the request using the correct SDK structure
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    data: fileBuffer.toString("base64"),
+                    mimeType
+                }
+            },
+            {
+                text: "Extract all readable text from this document. Return only clean text without any markdown formatting or commentary."
+            }
+        ]);
+
+        // 3. Use the response.text() method to retrieve the content
+        const response = await result.response;
+        const text = response.text() || "";
+
+        console.log("✅ Gemini OCR done. Extracted characters:", text.length);
+
+        return text;
+
+    } catch (err) {
+        console.error("❌ Gemini OCR failed:", err.message);
+        return "";
+    }
+}
+
 
 const text = result.text || "";
 
