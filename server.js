@@ -205,44 +205,7 @@ async function safeGenerate(prompt) {
       ]
     }
   ]
-});*/
-
-async function geminiOCR(filePath, mimeType = "image/png") {
-    try {
-        console.log("🔍 Gemini OCR running...");
-        
-        // 1. Initialize the stable model (Gemini 1.5 Flash is highly optimized for OCR)
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        const fileBuffer = fs.readFileSync(filePath);
-
-        // 2. Format the request using the correct SDK structure
-        const result = await model.generateContent([
-            {
-                inlineData: {
-                    data: fileBuffer.toString("base64"),
-                    mimeType
-                }
-            },
-            {
-                text: "Extract all readable text from this document. Return only clean text without any markdown formatting or commentary."
-            }
-        ]);
-
-        // 3. Use the response.text() method to retrieve the content
-        const response = await result.response;
-        const text = response.text() || "";
-
-        console.log("✅ Gemini OCR done. Extracted characters:", text.length);
-
-        return text;
-
-    } catch (err) {
-        console.error("❌ Gemini OCR failed:", err.message);
-        return "";
-    }
-}
-
+});
 
 const text = result.text || "";
 
@@ -254,7 +217,45 @@ const text = result.text || "";
         console.error("❌ Gemini OCR failed:", err);
         return "";
     }
+}*/
+
+async function geminiOCR(filePath, mimeType = "image/png") {
+    try {
+        console.log("🔍 Gemini OCR running...");
+
+        // 1. Use the stable production-ready model
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash" 
+        });
+
+        const fileBuffer = fs.readFileSync(filePath);
+
+        // 2. Format the request correctly for multimodal input
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    data: fileBuffer.toString("base64"),
+                    mimeType
+                }
+            },
+            {
+                text: "Extract all text from this image accurately. Return only the extracted text without any commentary or markdown code blocks."
+            }
+        ]);
+
+        // 3. Extract the text response
+        const response = await result.response;
+        const text = response.text();
+
+        console.log("✅ OCR complete. Extracted length:", text.length);
+        return text.trim();
+
+    } catch (err) {
+        console.error("❌ Gemini OCR failed:", err.message);
+        return "";
+    }
 }
+
 
 
 function isBadText(text) {
