@@ -2308,38 +2308,7 @@ app.post("/generate-cbt", async (req, res) => {
 
         let allQuestions = [];
 
-        for (let i = 0; i < batches; i++) {
-
-            /*const prompt = `
-You are an elite university examiner.
-
-Generate EXACTLY ${batchSize} UNIQUE multiple-choice questions.
-
-DIFFICULTY: ${difficulty.toUpperCase()}
-
-RULES:
-1. Each question MUST test a DIFFERENT concept
-2. NO repetition of ideas or wording
-3. Avoid "What is..." questions
-4. Use application, scenarios, reasoning
-5. Options must be plausible
-6. Answer must be A, B, C, or D
-
-OUTPUT JSON ONLY:
-{
-  "questions": [
-    {
-      "question": "...",
-      "options": ["A...", "B...", "C...", "D..."],
-      "answer": "A",
-      "explanation": "..."
-    }
-  ]
-}
-
-TEXT:
-${contextText}
-`;*/
+        for (let i = 0; i < batches; i++) {      
 
      const prompt = `
 Act as a JAMB examiner. Generate ${batchSize} MCQs based ONLY on the provided text.
