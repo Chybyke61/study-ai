@@ -143,7 +143,7 @@ return result.text;
     }
 } */
 
-async function geminiGenerate(prompt, retries = 3) {
+/* async function geminiGenerate(prompt, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const result = await genAI.models.generateContent({
@@ -164,7 +164,46 @@ async function geminiGenerate(prompt, retries = 3) {
             await new Promise(r => setTimeout(r, 2000)); // wait 2s
         }
     }
+} */
+
+async function geminiGenerate(prompt, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const result = await genAI.models.generateContent({
+                model: "gemini-3.1-flash-lite-preview", 
+                contents: [
+                    {
+                        role: "user",
+                        parts: [{ text: prompt }]
+                    }
+                ],
+                generationConfig: {
+                    temperature: 0.5,   // better balance (CBT + explanation)
+                    topP: 0.9,
+                    maxOutputTokens: 2048
+                }
+            });
+
+            const text = result.text?.trim();
+
+            // VALIDATION (VERY IMPORTANT)
+            if (!text || text.length < 20) {
+                throw new Error("Empty or weak response");
+            }
+
+            return text;
+
+        } catch (err) {
+            console.warn(`⚠️ Gemini attempt ${i + 1} failed:`, err.message);
+
+            if (i === retries - 1) throw err;
+
+            // 🔥 SMART RETRY (increasing delay)
+            await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+        }
+    }
 }
+
 
 
 async function safeGenerate(prompt) {
