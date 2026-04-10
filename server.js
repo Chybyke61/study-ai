@@ -221,16 +221,15 @@ const text = result.text || "";
 
 async function geminiOCR(filePath, mimeType = "image/png") {
     try {
-        console.log("🔍 Gemini OCR running...");
-
-        // 1. Use the stable production-ready model
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash" 
-        });
+        console.log("🔍 Stable Gemini OCR starting...");
+        
+        // 1. Initialize the specific stable model
+        // Use "gemini-2.5-flash" for the best speed/accuracy balance
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const fileBuffer = fs.readFileSync(filePath);
 
-        // 2. Format the request correctly for multimodal input
+        // 2. Pass data as an array of parts
         const result = await model.generateContent([
             {
                 inlineData: {
@@ -239,23 +238,22 @@ async function geminiOCR(filePath, mimeType = "image/png") {
                 }
             },
             {
-                text: "Extract all text from this image accurately. Return only the extracted text without any commentary or markdown code blocks."
+                text: "Extract all text from this image accurately. Return only the extracted text without any commentary, markdown backticks, or labels."
             }
         ]);
 
-        // 3. Extract the text response
+        // 3. Resolve the response object
         const response = await result.response;
         const text = response.text();
 
-        console.log("✅ OCR complete. Extracted length:", text.length);
+        console.log(`✅ OCR Success (${text.length} chars)`);
         return text.trim();
 
     } catch (err) {
-        console.error("❌ Gemini OCR failed:", err.message);
+        console.error("❌ Gemini OCR Exception:", err.message);
         return "";
     }
 }
-
 
 
 function isBadText(text) {
