@@ -2270,7 +2270,7 @@ app.post("/generate-cbt", async (req, res) => {
 
         for (let i = 0; i < batches; i++) {
 
-            const prompt = `
+            /*const prompt = `
 You are an elite university examiner.
 
 Generate EXACTLY ${batchSize} UNIQUE multiple-choice questions.
@@ -2299,7 +2299,35 @@ OUTPUT JSON ONLY:
 
 TEXT:
 ${contextText}
-`;
+`;*/
+
+     const prompt = `
+Act as a JAMB examiner. Generate ${batchSize} MCQs based ONLY on the provided text.
+
+DIFFICULTY: ${difficulty.toUpperCase()}
+
+STRICT ARCHITECTURE:
+1. CONCEPT COVERAGE: You MUST identify ${batchSize} distinct, non-overlapping concepts. If concept A is in question 1, it cannot appear in question 2.
+2. NO REPETITION: Do not repeat sentence structures, keywords, or topics.
+3. FORBIDDEN: No "True or False", "Yes/No", "What is", or "Which of the following".
+4. DYNAMIC STARTERS: Every question must be built around an action verb. Vary your approach using these methods:
+   - SCENARIO: Create a hypothetical problem.
+   - CAUSE-EFFECT: Link a process to its direct consequence.
+   - COMPARISON: Contrast two different terms from the text.
+   - INFERENCE: Ask what can be deduced if a certain condition in the text changes.
+   - ANALYSIS: Breakdown a complex process into its functional parts.
+
+RULES:
+- Exactly ${batchSize} questions.
+- Answer must be ONLY the letter (A, B, C, or D).
+- Output ONLY raw JSON. No markdown.
+
+FORMAT:
+{"questions":[{"question":"","options":["A. ","B. ","C. ","D. "],"answer":"","explanation":""}]}
+
+TEXT:
+${contextText}`;
+
 
             let outputText = "";
 
@@ -2308,7 +2336,7 @@ ${contextText}
                 outputText = await Promise.race([
                     geminiGenerate(prompt),
                     new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error("Gemini timeout")), 12000)
+                        setTimeout(() => reject(new Error("Gemini timeout")), 7000)
                     )
                 ]);
 
